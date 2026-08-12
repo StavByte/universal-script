@@ -1,0 +1,1733 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
+
+local character
+local humanoid
+local root
+
+local gui
+local main
+local openButton
+local statusLabel
+local debugLabel
+
+local flyButton
+local tpButton
+local lockButton
+local healButton
+local resetButton
+local espButton
+local ragdollButton
+
+local flyConnection
+local flyVelocity
+local flyGyro
+
+local lockHighlight
+local lockBillboard
+
+local waitingBind
+local lastHoverTime = 0
+
+local flyKeys = {
+	W = false,
+	A = false,
+	S = false,
+	D = false,
+	Space = false,
+	Ctrl = false,
+}
+
+local espObjects = {}
+local espConnections = {}
+
+local state = {
+	flying = false,
+	flySpeed = 120,
+	walkSpeed = 16,
+
+	tpMode = false,
+
+	lockEnabled = false,
+	lockMode = "Body",
+	lockTarget = nil,
+
+	espEnabled = false,
+
+	ragdolled = false,
+
+	keybinds = {
+		Heal = nil,
+		Reset = nil,
+		Ragdoll = nil,
+		Fly = nil,
+		ESP = nil,
+		Speed = nil,
+		Lock = nil,
+		TPClick = nil,
+	},
+
+	espOptions = {
+		highlight = true,
+		hp = true,
+		name = true,
+	},
+}
+
+local function setCharacter(char)
+	character = char
+	humanoid = char:WaitForChild("Humanoid")
+	root = char:WaitForChild("HumanoidRootPart")
+end
+
+setCharacter(player.Character or player.CharacterAdded:Wait())
+
+local function playUISound(soundId, playbackSpeed, volume, duration)
+	local sound = Instance.new("Sound")
+	sound.Name = "V23_TemporaryUISound"
+	sound.SoundId = soundId
+	sound.PlaybackSpeed = playbackSpeed or 1
+	sound.Volume = volume or 0.35
+	sound.Parent = SoundService
+
+	SoundService:PlayLocalSound(sound)
+
+	task.delay(math.min(duration or 2, 2), function()
+		if sound and sound.Parent then
+			sound:Stop()
+			sound:Destroy()
+		end
+	end)
+end
+
+local function playFunctionSound()
+	playUISound("rbxassetid://12221967", 1, 0.38, 2)
+end
+
+local function playTabSound()
+	playUISound("rbxassetid://12221967", 0.78, 0.25, 2)
+end
+
+local function playHoverSound()
+	local now = os.clock()
+
+	if now - lastHoverTime < 0.12 then
+		return
+	end
+
+	lastHoverTime = now
+	playUISound("rbxassetid://9118828564", 1, 0.12, 0.35)
+end
+
+local function roundify(object, radius)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius)
+	corner.Parent = object
+end
+
+local function addStroke(object, color, thickness, transparency)
+	local uiStroke = Instance.new("UIStroke")
+	uiStroke.Color = color
+	uiStroke.Thickness = thickness or 1
+	uiStroke.Transparency = transparency or 0
+	uiStroke.Parent = object
+	return uiStroke
+end
+
+local function setStatus(text)
+	if statusLabel then
+		statusLabel.Text = "Status: " .. text
+	end
+end
+
+local function makeDraggable(handle, target)
+	local dragging = false
+	local dragStart
+	local startPosition
+
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+			return
+		end
+
+		dragging = true
+		dragStart = input.Position
+		startPosition = target.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end)
+
+	handle.InputChanged:Connect(function(input)
+		if not dragging then
+			return
+		end
+
+		if input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = input.Position - dragStart
+
+			target.Position = UDim2.new(
+				startPosition.X.Scale,
+				startPosition.X.Offset + delta.X,
+				startPosition.Y.Scale,
+				startPosition.Y.Offset + delta.Y
+			)
+		end
+	end)
+end
+
+local function makeLabel(parent, text, position, size)
+	local label = Instance.new("TextLabel")
+	label.Size = size
+	label.Position = position
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = Color3.fromRGB(175, 180, 195)
+	label.Font = Enum.Font.Gotham
+	label.TextSize = 12
+	label.TextWrapped = true
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextYAlignment = Enum.TextYAlignment.Top
+	label.ZIndex = 5
+	label.Parent = parent
+	return label
+end
+
+local function makeButton(parent, text, color, position, size)
+	local button = Instance.new("TextButton")
+	button.Size = size
+	button.Position = position
+	button.BackgroundColor3 = color
+	button.BorderSizePixel = 0
+	button.Text = text
+	button.TextColor3 = Color3.fromRGB(255, 255, 255)
+	button.Font = Enum.Font.GothamSemibold
+	button.TextSize = 14
+	button.Active = true
+	button.Selectable = true
+	button.ZIndex = 6
+	button.Parent = parent
+
+	roundify(button, 11)
+	addStroke(button, Color3.fromRGB(255, 255, 255), 1, 0.88)
+
+	local scale = Instance.new("UIScale")
+	scale.Scale = 1
+	scale.Parent = button
+
+	button.MouseEnter:Connect(function()
+		playHoverSound()
+		scale.Scale = 1.025
+	end)
+
+	button.MouseLeave:Connect(function()
+		scale.Scale = 1
+	end)
+
+	return button
+end
+
+gui = Instance.new("ScreenGui")
+gui.Name = "DebugMenuV23"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 999
+gui.Parent = playerGui
+
+main = Instance.new("Frame")
+main.Name = "MainWindow"
+main.Size = UDim2.new(0, 590, 0, 650)
+main.Position = UDim2.new(0.5, -295, 0.5, -325)
+main.BackgroundColor3 = Color3.fromRGB(14, 16, 23)
+main.BorderSizePixel = 0
+main.Active = true
+main.ZIndex = 1
+main.Parent = gui
+
+roundify(main, 18)
+addStroke(main, Color3.fromRGB(85, 95, 125), 1, 0.15)
+
+local topbar = Instance.new("Frame")
+topbar.Size = UDim2.new(1, 0, 0, 54)
+topbar.BackgroundColor3 = Color3.fromRGB(23, 26, 37)
+topbar.BorderSizePixel = 0
+topbar.Active = true
+topbar.ZIndex = 2
+topbar.Parent = main
+
+roundify(topbar, 18)
+
+local accent = Instance.new("Frame")
+accent.Size = UDim2.new(1, 0, 0, 3)
+accent.Position = UDim2.new(0, 0, 1, -3)
+accent.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
+accent.BorderSizePixel = 0
+accent.ZIndex = 3
+accent.Parent = topbar
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -220, 1, 0)
+title.Position = UDim2.new(0, 16, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "Debug Menu v2.3"
+title.TextColor3 = Color3.fromRGB(245, 247, 255)
+title.Font = Enum.Font.GothamSemibold
+title.TextSize = 18
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.ZIndex = 4
+title.Parent = topbar
+
+debugLabel = Instance.new("TextLabel")
+debugLabel.Size = UDim2.new(0, 150, 0, 18)
+debugLabel.Position = UDim2.new(1, -280, 0, 18)
+debugLabel.BackgroundTransparency = 1
+debugLabel.Text = "Clicks: OK"
+debugLabel.TextColor3 = Color3.fromRGB(120, 220, 145)
+debugLabel.Font = Enum.Font.GothamBold
+debugLabel.TextSize = 11
+debugLabel.TextXAlignment = Enum.TextXAlignment.Right
+debugLabel.ZIndex = 4
+debugLabel.Parent = topbar
+
+local minimizeButton = makeButton(
+	topbar,
+	"—",
+	Color3.fromRGB(68, 72, 92),
+	UDim2.new(1, -126, 0, 10),
+	UDim2.new(0, 34, 0, 34)
+)
+
+local closeButton = makeButton(
+	topbar,
+	"×",
+	Color3.fromRGB(174, 65, 70),
+	UDim2.new(1, -82, 0, 10),
+	UDim2.new(0, 34, 0, 34)
+)
+
+makeDraggable(topbar, main)
+
+local resizeHandle = Instance.new("TextButton")
+resizeHandle.Size = UDim2.new(0, 18, 0, 18)
+resizeHandle.Position = UDim2.new(1, -18, 1, -18)
+resizeHandle.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
+resizeHandle.Text = ""
+resizeHandle.BorderSizePixel = 0
+resizeHandle.Active = true
+resizeHandle.ZIndex = 10
+resizeHandle.Parent = main
+
+roundify(resizeHandle, 6)
+
+local resizing = false
+local resizeStart
+local startSize
+
+resizeHandle.InputBegan:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+		return
+	end
+
+	resizing = true
+	resizeStart = input.Position
+	startSize = main.Size
+	playFunctionSound()
+
+	input.Changed:Connect(function()
+		if input.UserInputState == Enum.UserInputState.End then
+			resizing = false
+		end
+	end)
+end)
+
+resizeHandle.InputChanged:Connect(function(input)
+	if not resizing then
+		return
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		local delta = input.Position - resizeStart
+		local width = math.clamp(startSize.X.Offset + delta.X, 500, 850)
+		local height = math.clamp(startSize.Y.Offset + delta.Y, 520, 850)
+
+		main.Size = UDim2.new(0, width, 0, height)
+	end
+end)
+
+openButton = makeButton(
+	gui,
+	"Open Menu",
+	Color3.fromRGB(65, 120, 235),
+	UDim2.new(0, 16, 1, -58),
+	UDim2.new(0, 140, 0, 40)
+)
+
+openButton.Visible = false
+
+local tabs = Instance.new("Frame")
+tabs.Size = UDim2.new(1, -28, 0, 38)
+tabs.Position = UDim2.new(0, 14, 0, 66)
+tabs.BackgroundTransparency = 1
+tabs.ZIndex = 3
+tabs.Parent = main
+
+local content = Instance.new("Frame")
+content.Size = UDim2.new(1, -28, 1, -120)
+content.Position = UDim2.new(0, 14, 0, 112)
+content.BackgroundTransparency = 1
+content.ZIndex = 2
+content.Parent = main
+
+local tabFrames = {}
+
+for _, name in ipairs({"Main", "Players", "Settings", "Commands"}) do
+	local frame = Instance.new("Frame")
+	frame.Name = name .. "Tab"
+	frame.Size = UDim2.new(1, 0, 1, 0)
+	frame.BackgroundTransparency = 1
+	frame.Visible = false
+	frame.ZIndex = 3
+	frame.Parent = content
+	tabFrames[name] = frame
+end
+
+tabFrames.Main.Visible = true
+
+local function switchTab(name)
+	for tabName, frame in pairs(tabFrames) do
+		frame.Visible = tabName == name
+	end
+
+	debugLabel.Text = "Tab: " .. name
+end
+
+local function createTabButton(text, x)
+	local button = makeButton(
+		tabs,
+		text,
+		Color3.fromRGB(36, 40, 53),
+		UDim2.new(0, x, 0, 0),
+		UDim2.new(0, 105, 0, 34)
+	)
+
+	button.Activated:Connect(function()
+		playTabSound()
+		switchTab(text)
+
+		for _, child in ipairs(tabs:GetChildren()) do
+			if child:IsA("TextButton") then
+				child.BackgroundColor3 = Color3.fromRGB(36, 40, 53)
+			end
+		end
+
+		button.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
+	end)
+
+	return button
+end
+
+local mainTabButton = createTabButton("Main", 0)
+local playersTabButton = createTabButton("Players", 113)
+local settingsTabButton = createTabButton("Settings", 226)
+local commandsTabButton = createTabButton("Commands", 339)
+
+mainTabButton.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
+
+statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 0, 20)
+statusLabel.Position = UDim2.new(0, 0, 0, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Status: ready"
+statusLabel.TextColor3 = Color3.fromRGB(170, 175, 190)
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 12
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.ZIndex = 5
+statusLabel.Parent = tabFrames.Main
+
+flyButton = makeButton(
+	tabFrames.Main,
+	"Fly: OFF",
+	Color3.fromRGB(65, 175, 100),
+	UDim2.new(0, 0, 0, 30),
+	UDim2.new(1, 0, 0, 38)
+)
+
+tpButton = makeButton(
+	tabFrames.Main,
+	"Click TP: OFF",
+	Color3.fromRGB(65, 120, 235),
+	UDim2.new(0, 0, 0, 78),
+	UDim2.new(1, 0, 0, 38)
+)
+
+lockButton = makeButton(
+	tabFrames.Main,
+	"Lock On: OFF",
+	Color3.fromRGB(220, 130, 55),
+	UDim2.new(0, 0, 0, 126),
+	UDim2.new(1, 0, 0, 38)
+)
+
+healButton = makeButton(
+	tabFrames.Main,
+	"Heal",
+	Color3.fromRGB(75, 160, 235),
+	UDim2.new(0, 0, 0, 174),
+	UDim2.new(1, 0, 0, 38)
+)
+
+resetButton = makeButton(
+	tabFrames.Main,
+	"Reset",
+	Color3.fromRGB(190, 70, 75),
+	UDim2.new(0, 0, 0, 222),
+	UDim2.new(1, 0, 0, 38)
+)
+
+espButton = makeButton(
+	tabFrames.Main,
+	"ESP: OFF",
+	Color3.fromRGB(160, 75, 185),
+	UDim2.new(0, 0, 0, 270),
+	UDim2.new(1, 0, 0, 38)
+)
+
+ragdollButton = makeButton(
+	tabFrames.Main,
+	"Ragdoll: OFF",
+	Color3.fromRGB(105, 110, 125),
+	UDim2.new(0, 0, 0, 318),
+	UDim2.new(1, 0, 0, 38)
+)
+
+makeLabel(
+	tabFrames.Main,
+	"Fly: W/A/S/D + Space + LeftControl\nClick TP: включи режим и нажми по поверхности.\nLock On: включи и используй среднюю кнопку мыши.",
+	UDim2.new(0, 0, 0, 370),
+	UDim2.new(1, 0, 0, 65)
+)
+
+local flySpeedLabel = makeLabel(
+	tabFrames.Settings,
+	"Fly Speed: 120",
+	UDim2.new(0, 0, 0, 10),
+	UDim2.new(1, 0, 0, 20)
+)
+
+local flySlider = Instance.new("Frame")
+flySlider.Size = UDim2.new(1, 0, 0, 18)
+flySlider.Position = UDim2.new(0, 0, 0, 40)
+flySlider.BackgroundColor3 = Color3.fromRGB(35, 39, 52)
+flySlider.BorderSizePixel = 0
+flySlider.Active = true
+flySlider.ZIndex = 5
+flySlider.Parent = tabFrames.Settings
+
+roundify(flySlider, 9)
+addStroke(flySlider, Color3.fromRGB(85, 95, 125), 1, 0.35)
+
+local flyFill = Instance.new("Frame")
+flyFill.Size = UDim2.new((state.flySpeed - 50) / 450, 0, 1, 0)
+flyFill.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
+flyFill.BorderSizePixel = 0
+flyFill.ZIndex = 6
+flyFill.Parent = flySlider
+
+roundify(flyFill, 9)
+
+local flyKnob = Instance.new("Frame")
+flyKnob.Size = UDim2.new(0, 18, 0, 18)
+flyKnob.Position = UDim2.new((state.flySpeed - 50) / 450, -9, 0.5, -9)
+flyKnob.BackgroundColor3 = Color3.fromRGB(245, 245, 250)
+flyKnob.BorderSizePixel = 0
+flyKnob.ZIndex = 7
+flyKnob.Parent = flySlider
+
+roundify(flyKnob, 9)
+
+local function updateFlySpeed(x)
+	local relative = math.clamp(
+		(x - flySlider.AbsolutePosition.X) / flySlider.AbsoluteSize.X,
+		0,
+		1
+	)
+
+	state.flySpeed = math.floor(50 + relative * 450)
+	flyFill.Size = UDim2.new(relative, 0, 1, 0)
+	flyKnob.Position = UDim2.new(relative, -9, 0.5, -9)
+	flySpeedLabel.Text = "Fly Speed: " .. state.flySpeed
+	setStatus("fly speed " .. state.flySpeed)
+end
+
+flySlider.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		updateFlySpeed(input.Position.X)
+		playFunctionSound()
+	end
+end)
+
+flySlider.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement
+		and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+		updateFlySpeed(input.Position.X)
+	end
+end)
+
+local walkSpeedLabel = makeLabel(
+	tabFrames.Settings,
+	"WalkSpeed: 16",
+	UDim2.new(0, 0, 0, 82),
+	UDim2.new(1, 0, 0, 20)
+)
+
+local walkSlider = Instance.new("Frame")
+walkSlider.Size = UDim2.new(1, 0, 0, 18)
+walkSlider.Position = UDim2.new(0, 0, 0, 112)
+walkSlider.BackgroundColor3 = Color3.fromRGB(35, 39, 52)
+walkSlider.BorderSizePixel = 0
+walkSlider.Active = true
+walkSlider.ZIndex = 5
+walkSlider.Parent = tabFrames.Settings
+
+roundify(walkSlider, 9)
+addStroke(walkSlider, Color3.fromRGB(85, 95, 125), 1, 0.35)
+
+local walkFill = Instance.new("Frame")
+walkFill.Size = UDim2.new((state.walkSpeed - 8) / 32, 0, 1, 0)
+walkFill.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
+walkFill.BorderSizePixel = 0
+walkFill.ZIndex = 6
+walkFill.Parent = walkSlider
+
+roundify(walkFill, 9)
+
+local walkKnob = Instance.new("Frame")
+walkKnob.Size = UDim2.new(0, 18, 0, 18)
+walkKnob.Position = UDim2.new((state.walkSpeed - 8) / 32, -9, 0.5, -9)
+walkKnob.BackgroundColor3 = Color3.fromRGB(245, 245, 250)
+walkKnob.BorderSizePixel = 0
+walkKnob.ZIndex = 7
+walkKnob.Parent = walkSlider
+
+roundify(walkKnob, 9)
+
+local function updateWalkSpeed(x)
+	local relative = math.clamp(
+		(x - walkSlider.AbsolutePosition.X) / walkSlider.AbsoluteSize.X,
+		0,
+		1
+	)
+
+	state.walkSpeed = math.floor(8 + relative * 32)
+	walkFill.Size = UDim2.new(relative, 0, 1, 0)
+	walkKnob.Position = UDim2.new(relative, -9, 0.5, -9)
+	walkSpeedLabel.Text = "WalkSpeed: " .. state.walkSpeed
+
+	if humanoid then
+		humanoid.WalkSpeed = state.walkSpeed
+	end
+
+	setStatus("walk speed " .. state.walkSpeed)
+end
+
+walkSlider.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		updateWalkSpeed(input.Position.X)
+		playFunctionSound()
+	end
+end)
+
+walkSlider.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement
+		and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+		updateWalkSpeed(input.Position.X)
+	end
+end)
+
+local lockLabel = makeLabel(
+	tabFrames.Settings,
+	"Lock Target: Body",
+	UDim2.new(0, 0, 0, 154),
+	UDim2.new(1, 0, 0, 20)
+)
+
+local lockDropdown = makeButton(
+	tabFrames.Settings,
+	"Lock Target: Body",
+	Color3.fromRGB(36, 40, 53),
+	UDim2.new(0, 0, 0, 182),
+	UDim2.new(1, 0, 0, 36)
+)
+
+local lockOptions = Instance.new("Frame")
+lockOptions.Size = UDim2.new(1, 0, 0, 0)
+lockOptions.Position = UDim2.new(0, 0, 0, 222)
+lockOptions.BackgroundTransparency = 1
+lockOptions.Visible = false
+lockOptions.ClipsDescendants = true
+lockOptions.ZIndex = 8
+lockOptions.Parent = tabFrames.Settings
+
+local lockLayout = Instance.new("UIListLayout")
+lockLayout.Padding = UDim.new(0, 5)
+lockLayout.Parent = lockOptions
+
+for _, mode in ipairs({"Body", "Head"}) do
+	local option = makeButton(
+		lockOptions,
+		mode,
+		Color3.fromRGB(48, 53, 70),
+		UDim2.new(0, 0, 0, 0),
+		UDim2.new(1, 0, 0, 32)
+	)
+
+	option.Activated:Connect(function()
+		state.lockMode = mode
+		lockLabel.Text = "Lock Target: " .. mode
+		lockDropdown.Text = "Lock Target: " .. mode
+		lockOptions.Visible = false
+		lockOptions.Size = UDim2.new(1, 0, 0, 0)
+		playFunctionSound()
+	end)
+end
+
+lockDropdown.Activated:Connect(function()
+	lockOptions.Visible = not lockOptions.Visible
+
+	if lockOptions.Visible then
+		lockOptions.Size = UDim2.new(1, 0, 0, 69)
+	else
+		lockOptions.Size = UDim2.new(1, 0, 0, 0)
+	end
+
+	playFunctionSound()
+end)
+
+local espTitle = makeLabel(
+	tabFrames.Settings,
+	"ESP options",
+	UDim2.new(0, 0, 0, 280),
+	UDim2.new(1, 0, 0, 20)
+)
+
+local function createOptionToggle(text, key, y)
+	local button = makeButton(
+		tabFrames.Settings,
+		text .. ": ON",
+		Color3.fromRGB(55, 125, 90),
+		UDim2.new(0, 0, 0, y),
+		UDim2.new(1, 0, 0, 32)
+	)
+
+	button.Activated:Connect(function()
+		state.espOptions[key] = not state.espOptions[key]
+
+		button.Text = text .. ": " .. (state.espOptions[key] and "ON" or "OFF")
+		button.BackgroundColor3 = state.espOptions[key]
+			and Color3.fromRGB(55, 125, 90)
+			or Color3.fromRGB(75, 78, 92)
+
+		if state.espEnabled then
+			refreshESPAll()
+		end
+
+		playFunctionSound()
+	end)
+
+	return button
+end
+
+createOptionToggle("Highlight", "highlight", 310)
+createOptionToggle("HP", "hp", 348)
+createOptionToggle("Name", "name", 386)
+
+local playerSearch = Instance.new("TextBox")
+playerSearch.Size = UDim2.new(1, 0, 0, 36)
+playerSearch.Position = UDim2.new(0, 0, 0, 0)
+playerSearch.BackgroundColor3 = Color3.fromRGB(30, 34, 46)
+playerSearch.TextColor3 = Color3.fromRGB(255, 255, 255)
+playerSearch.PlaceholderText = "Search player..."
+playerSearch.PlaceholderColor3 = Color3.fromRGB(155, 160, 175)
+playerSearch.Text = ""
+playerSearch.ClearTextOnFocus = false
+playerSearch.Font = Enum.Font.Gotham
+playerSearch.TextSize = 14
+playerSearch.Active = true
+playerSearch.ZIndex = 6
+playerSearch.Parent = tabFrames.Players
+
+roundify(playerSearch, 10)
+addStroke(playerSearch, Color3.fromRGB(85, 95, 125), 1, 0.35)
+
+local playerScroll = Instance.new("ScrollingFrame")
+playerScroll.Size = UDim2.new(1, 0, 1, -48)
+playerScroll.Position = UDim2.new(0, 0, 0, 48)
+playerScroll.BackgroundTransparency = 1
+playerScroll.BorderSizePixel = 0
+playerScroll.ScrollBarThickness = 6
+playerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+playerScroll.ZIndex = 4
+playerScroll.Parent = tabFrames.Players
+
+local playerLayout = Instance.new("UIListLayout")
+playerLayout.Padding = UDim.new(0, 8)
+playerLayout.Parent = playerScroll
+
+local function clearPlayerRows()
+	for _, child in ipairs(playerScroll:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+end
+
+local function createPlayerRow(plr)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 62)
+	row.BackgroundColor3 = Color3.fromRGB(27, 31, 42)
+	row.BorderSizePixel = 0
+	row.Active = true
+	row.ZIndex = 5
+	row.Parent = playerScroll
+
+	roundify(row, 12)
+	addStroke(row, Color3.fromRGB(85, 95, 125), 1, 0.45)
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, -145, 0, 22)
+	nameLabel.Position = UDim2.new(0, 12, 0, 7)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = plr.DisplayName .. "  @" .. plr.Name
+	nameLabel.TextColor3 = Color3.fromRGB(245, 247, 255)
+	nameLabel.Font = Enum.Font.GothamSemibold
+	nameLabel.TextSize = 14
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.ZIndex = 6
+	nameLabel.Parent = row
+
+	local tp = makeButton(
+		row,
+		"TP",
+		Color3.fromRGB(65, 120, 235),
+		UDim2.new(1, -52, 0, 8),
+		UDim2.new(0, 42, 0, 24)
+	)
+
+	local lock = makeButton(
+		row,
+		"Lock",
+		Color3.fromRGB(135, 92, 205),
+		UDim2.new(1, -66, 0, 34),
+		UDim2.new(0, 58, 0, 24)
+	)
+
+	tp.Activated:Connect(function()
+		if not state.tpMode then
+			playFunctionSound()
+		end
+
+		if character and plr.Character and root then
+			local targetRoot = plr.Character:FindFirstChild("HumanoidRootPart")
+
+			if targetRoot then
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+				root.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 4)
+				setStatus("teleported to " .. plr.Name)
+			end
+		end
+	end)
+
+	lock.Activated:Connect(function()
+		state.lockEnabled = true
+		lockButton.Text = "Lock On: ON"
+		lockOn(plr)
+		playFunctionSound()
+	end)
+end
+
+local function refreshPlayers()
+	clearPlayerRows()
+
+	local query = string.lower(playerSearch.Text or "")
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local nameMatch = string.find(string.lower(plr.Name), query, 1, true)
+			local displayMatch = string.find(string.lower(plr.DisplayName), query, 1, true)
+
+			if query == "" or nameMatch or displayMatch then
+				createPlayerRow(plr)
+			end
+		end
+	end
+
+	task.defer(function()
+		playerScroll.CanvasSize = UDim2.new(
+			0,
+			0,
+			0,
+			playerLayout.AbsoluteContentSize.Y + 6
+		)
+	end)
+end
+
+playerSearch:GetPropertyChangedSignal("Text"):Connect(refreshPlayers)
+Players.PlayerAdded:Connect(refreshPlayers)
+Players.PlayerRemoving:Connect(refreshPlayers)
+
+local function createBindRow(parent, titleText, command, y)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 42)
+	row.Position = UDim2.new(0, 0, 0, y)
+	row.BackgroundColor3 = Color3.fromRGB(27, 31, 42)
+	row.BorderSizePixel = 0
+	row.Active = true
+	row.ZIndex = 5
+	row.Parent = parent
+
+	roundify(row, 11)
+	addStroke(row, Color3.fromRGB(85, 95, 125), 1, 0.45)
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -125, 1, 0)
+	label.Position = UDim2.new(0, 12, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = titleText
+	label.TextColor3 = Color3.fromRGB(245, 247, 255)
+	label.Font = Enum.Font.GothamSemibold
+	label.TextSize = 13
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.ZIndex = 6
+	label.Parent = row
+
+	local bindButton = makeButton(
+		row,
+		"None",
+		Color3.fromRGB(65, 120, 235),
+		UDim2.new(1, -102, 0.5, -12),
+		UDim2.new(0, 90, 0, 24)
+	)
+
+	bindButton.Activated:Connect(function()
+		waitingBind = command
+		bindButton.Text = "Press key"
+		setStatus("binding " .. command)
+		playFunctionSound()
+	end)
+
+	return bindButton
+end
+
+makeLabel(
+	tabFrames.Commands,
+	"Нажми на кнопку None, затем нажми нужную клавишу.",
+	UDim2.new(0, 0, 0, 0),
+	UDim2.new(1, 0, 0, 30)
+)
+
+local bindButtons = {}
+
+bindButtons.Heal = createBindRow(tabFrames.Commands, "Heal", "Heal", 38)
+bindButtons.Reset = createBindRow(tabFrames.Commands, "Reset", "Reset", 88)
+bindButtons.Ragdoll = createBindRow(tabFrames.Commands, "Ragdoll", "Ragdoll", 138)
+bindButtons.Fly = createBindRow(tabFrames.Commands, "Fly", "Fly", 188)
+bindButtons.ESP = createBindRow(tabFrames.Commands, "ESP", "ESP", 238)
+bindButtons.Speed = createBindRow(tabFrames.Commands, "Speed", "Speed", 288)
+bindButtons.Lock = createBindRow(tabFrames.Commands, "Lock", "Lock", 338)
+bindButtons.TPClick = createBindRow(tabFrames.Commands, "Click TP", "TPClick", 388)
+
+local function updateBindText(command)
+	local bindButton = bindButtons[command]
+	if not bindButton then
+		return
+	end
+
+	local key = state.keybinds[command]
+	bindButton.Text = key and key.Name or "None"
+end
+
+local function getTargetPart(plr)
+	if not plr.Character then
+		return nil
+	end
+
+	if state.lockMode == "Head" then
+		return plr.Character:FindFirstChild("Head")
+			or plr.Character:FindFirstChild("HumanoidRootPart")
+	end
+
+	return plr.Character:FindFirstChild("HumanoidRootPart")
+		or plr.Character:FindFirstChild("Head")
+end
+
+local function clearLockVisual()
+	if lockHighlight then
+		lockHighlight:Destroy()
+		lockHighlight = nil
+	end
+
+	if lockBillboard then
+		lockBillboard:Destroy()
+		lockBillboard = nil
+	end
+end
+
+local function createLockVisual(plr)
+	clearLockVisual()
+
+	if not plr.Character then
+		return
+	end
+
+	local targetPart = getTargetPart(plr)
+	if not targetPart then
+		return
+	end
+
+	lockHighlight = Instance.new("Highlight")
+	lockHighlight.Adornee = plr.Character
+	lockHighlight.FillColor = Color3.fromRGB(70, 140, 255)
+	lockHighlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+	lockHighlight.FillTransparency = 0.65
+	lockHighlight.Parent = plr.Character
+
+	lockBillboard = Instance.new("BillboardGui")
+	lockBillboard.Adornee = targetPart
+	lockBillboard.AlwaysOnTop = true
+	lockBillboard.Size = UDim2.new(0, 55, 0, 55)
+	lockBillboard.StudsOffset = Vector3.new(0, 2.5, 0)
+	lockBillboard.Parent = plr.Character
+
+	local mark = Instance.new("TextLabel")
+	mark.Size = UDim2.new(1, 0, 1, 0)
+	mark.BackgroundTransparency = 1
+	mark.Text = "◎"
+	mark.TextColor3 = Color3.fromRGB(255, 75, 75)
+	mark.Font = Enum.Font.GothamBold
+	mark.TextScaled = true
+	mark.Parent = lockBillboard
+end
+
+local function unlock()
+	state.lockTarget = nil
+	clearLockVisual()
+
+	if humanoid then
+		humanoid.AutoRotate = true
+	end
+
+	camera.CameraType = Enum.CameraType.Custom
+	camera.CameraSubject = humanoid
+	setStatus("lock off")
+end
+
+local function lockOn(plr)
+	if not plr or not plr.Character then
+		return
+	end
+
+	state.lockTarget = plr
+	humanoid.AutoRotate = false
+	camera.CameraType = Enum.CameraType.Scriptable
+	createLockVisual(plr)
+	setStatus("locked: " .. plr.Name)
+end
+
+local function getBestTarget()
+	local position = camera.CFrame.Position
+	local direction = camera.CFrame.LookVector
+
+	local bestPlayer
+	local bestScore = 0.88
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character then
+			local targetPart = getTargetPart(plr)
+			local targetHumanoid = plr.Character:FindFirstChildOfClass("Humanoid")
+
+			if targetPart and targetHumanoid and targetHumanoid.Health > 0 then
+				local offset = targetPart.Position - position
+
+				if offset.Magnitude <= 120 then
+					local score = direction:Dot(offset.Unit)
+
+					if score > bestScore then
+						bestScore = score
+						bestPlayer = plr
+					end
+				end
+			end
+		end
+	end
+
+	return bestPlayer
+end
+
+local function stopFly()
+	state.flying = false
+
+	if flyConnection then
+		flyConnection:Disconnect()
+		flyConnection = nil
+	end
+
+	if flyVelocity then
+		flyVelocity:Destroy()
+		flyVelocity = nil
+	end
+
+	if flyGyro then
+		flyGyro:Destroy()
+		flyGyro = nil
+	end
+
+	if root then
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+	end
+
+	if flyButton then
+		flyButton.Text = "Fly: OFF"
+	end
+end
+
+local function startFly()
+	if state.flying then
+		return
+	end
+
+	if not character or not humanoid or humanoid.Health <= 0 then
+		setStatus("fly unavailable")
+		return
+	end
+
+	root = character:FindFirstChild("HumanoidRootPart")
+
+	if not root then
+		setStatus("root missing")
+		return
+	end
+
+	stopFly()
+	state.flying = true
+
+	flyVelocity = Instance.new("BodyVelocity")
+	flyVelocity.Name = "V23_FlyVelocity"
+	flyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+	flyVelocity.Velocity = Vector3.zero
+	flyVelocity.Parent = root
+
+	flyGyro = Instance.new("BodyGyro")
+	flyGyro.Name = "V23_FlyGyro"
+	flyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+	flyGyro.P = 1e4
+	flyGyro.CFrame = root.CFrame
+	flyGyro.Parent = root
+
+	flyConnection = RunService.RenderStepped:Connect(function()
+		if not state.flying then
+			return
+		end
+
+		if not character or not character.Parent then
+			stopFly()
+			return
+		end
+
+		root = character:FindFirstChild("HumanoidRootPart")
+		humanoid = character:FindFirstChildOfClass("Humanoid")
+
+		if not root or not humanoid or humanoid.Health <= 0 then
+			stopFly()
+			setStatus("fly stopped")
+			return
+		end
+
+		local movement = Vector3.zero
+		local cam = workspace.CurrentCamera
+
+		if flyKeys.W then
+			movement += cam.CFrame.LookVector
+		end
+
+		if flyKeys.S then
+			movement -= cam.CFrame.LookVector
+		end
+
+		if flyKeys.D then
+			movement += cam.CFrame.RightVector
+		end
+
+		if flyKeys.A then
+			movement -= cam.CFrame.RightVector
+		end
+
+		if flyKeys.Space then
+			movement += Vector3.new(0, 1, 0)
+		end
+
+		if flyKeys.Ctrl then
+			movement -= Vector3.new(0, 1, 0)
+		end
+
+		if movement.Magnitude > 0 then
+			movement = movement.Unit * state.flySpeed
+		end
+
+		flyVelocity.Velocity = movement
+		flyGyro.CFrame = cam.CFrame
+	end)
+end
+
+local function healPlayer()
+	if humanoid then
+		humanoid.MaxHealth = humanoid.MaxHealth > 0 and humanoid.MaxHealth or 100
+		humanoid.Health = humanoid.MaxHealth
+		setStatus("healed")
+	end
+end
+
+local function resetPlayer()
+	if humanoid then
+		humanoid.Health = 0
+	end
+end
+
+local function ragdollSelf(enabled)
+	if not humanoid then
+		return
+	end
+
+	state.ragdolled = enabled
+	humanoid.PlatformStand = enabled
+	humanoid.AutoRotate = not enabled
+
+	setStatus(enabled and "ragdoll on" or "ragdoll off")
+end
+
+local function removeESP(plr)
+	if espConnections[plr] then
+		espConnections[plr]:Disconnect()
+		espConnections[plr] = nil
+	end
+
+	if espObjects[plr] then
+		if espObjects[plr].highlight then
+			espObjects[plr].highlight:Destroy()
+		end
+
+		if espObjects[plr].billboard then
+			espObjects[plr].billboard:Destroy()
+		end
+
+		espObjects[plr] = nil
+	end
+end
+
+local function updateESPText(plr, data)
+	if not data or not data.label or not data.label.Parent then
+		return
+	end
+
+	if not data.humanoid or not data.humanoid.Parent then
+		return
+	end
+
+	local parts = {}
+
+	if state.espOptions.name then
+		table.insert(parts, plr.Name)
+	end
+
+	if state.espOptions.hp then
+		table.insert(
+			parts,
+			"HP: "
+				.. math.floor(data.humanoid.Health)
+				.. "/"
+				.. math.floor(data.humanoid.MaxHealth)
+		)
+	end
+
+	data.label.Text = table.concat(parts, " | ")
+end
+
+local function createESP(plr)
+	if plr == player then
+		return
+	end
+
+	if not state.espEnabled then
+		return
+	end
+
+	if not plr.Character then
+		return
+	end
+
+	removeESP(plr)
+
+	local char = plr.Character
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local targetHumanoid = char:FindFirstChildOfClass("Humanoid")
+
+	if not hrp or not targetHumanoid then
+		return
+	end
+
+	local highlight
+
+	if state.espOptions.highlight then
+		highlight = Instance.new("Highlight")
+		highlight.Name = "V23_ESP_Highlight"
+		highlight.Adornee = char
+		highlight.FillColor = Color3.fromRGB(255, 75, 75)
+		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+		highlight.FillTransparency = 0.7
+		highlight.OutlineTransparency = 0
+		highlight.Parent = char
+	end
+
+	local billboard
+	local label
+
+	if state.espOptions.name or state.espOptions.hp then
+		billboard = Instance.new("BillboardGui")
+		billboard.Name = "V23_ESP_Billboard"
+		billboard.Adornee = hrp
+		billboard.AlwaysOnTop = true
+		billboard.Size = UDim2.new(0, 190, 0, 32)
+		billboard.StudsOffset = Vector3.new(0, 3.2, 0)
+		billboard.Parent = char
+
+		label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, 0, 1, 0)
+		label.BackgroundTransparency = 1
+		label.TextColor3 = Color3.fromRGB(255, 255, 255)
+		label.TextStrokeTransparency = 0.3
+		label.Font = Enum.Font.GothamSemibold
+		label.TextScaled = true
+		label.Parent = billboard
+	end
+
+	local data = {
+		highlight = highlight,
+		billboard = billboard,
+		label = label,
+		humanoid = targetHumanoid,
+	}
+
+	espObjects[plr] = data
+
+	espConnections[plr] = targetHumanoid.HealthChanged:Connect(function()
+		updateESPText(plr, data)
+	end)
+
+	updateESPText(plr, data)
+end
+
+local function refreshESPAll()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			createESP(plr)
+		end
+	end
+end
+
+local function clearESPAll()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			removeESP(plr)
+		end
+	end
+end
+
+local function hookESPPlayer(plr)
+	if plr == player then
+		return
+	end
+
+	plr.CharacterAdded:Connect(function()
+		task.wait(0.25)
+
+		if state.espEnabled then
+			createESP(plr)
+		end
+	end)
+
+	plr.CharacterRemoving:Connect(function()
+		removeESP(plr)
+	end)
+
+	if plr.Character and state.espEnabled then
+		createESP(plr)
+	end
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do
+	hookESPPlayer(plr)
+end
+
+Players.PlayerAdded:Connect(function(plr)
+	hookESPPlayer(plr)
+	refreshPlayers()
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+	removeESP(plr)
+	refreshPlayers()
+end)
+
+local function isPointerOverGui()
+	local mousePosition = UserInputService:GetMouseLocation()
+	local objects = playerGui:GetGuiObjectsAtPosition(
+		mousePosition.X,
+		mousePosition.Y
+	)
+
+	for _, object in ipairs(objects) do
+		if object:IsDescendantOf(gui) then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function teleportToMouse()
+	if not state.tpMode then
+		return
+	end
+
+	if isPointerOverGui() then
+		return
+	end
+
+	if not character or not root then
+		return
+	end
+
+	local mousePosition = UserInputService:GetMouseLocation()
+	local ray = camera:ViewportPointToRay(
+		mousePosition.X,
+		mousePosition.Y
+	)
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = {character}
+
+	local result = workspace:Raycast(
+		ray.Origin,
+		ray.Direction * 1000,
+		params
+	)
+
+	if result then
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+		root.CFrame = CFrame.new(result.Position + Vector3.new(0, 3, 0))
+
+		task.wait()
+
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+
+		setStatus("teleported")
+		playFunctionSound()
+	end
+end
+
+local function updateBindButton(command)
+	local button = bindButtons[command]
+
+	if not button then
+		return
+	end
+
+	local key = state.keybinds[command]
+	button.Text = key and key.Name or "None"
+end
+
+flyButton.Activated:Connect(function()
+	if state.flying then
+		stopFly()
+		flyButton.Text = "Fly: OFF"
+		setStatus("fly off")
+	else
+		startFly()
+
+		if state.flying then
+			flyButton.Text = "Fly: ON"
+			setStatus("fly on")
+		end
+	end
+
+	playFunctionSound()
+end)
+
+tpButton.Activated:Connect(function()
+	state.tpMode = not state.tpMode
+	tpButton.Text = "Click TP: " .. (state.tpMode and "ON" or "OFF")
+	setStatus("click tp " .. (state.tpMode and "on" or "off"))
+	playFunctionSound()
+end)
+
+lockButton.Activated:Connect(function()
+	state.lockEnabled = not state.lockEnabled
+	lockButton.Text = "Lock On: " .. (state.lockEnabled and "ON" or "OFF")
+
+	if state.lockEnabled then
+		local target = getBestTarget()
+
+		if target then
+			lockOn(target)
+		else
+			setStatus("target not found")
+		end
+	else
+		unlock()
+	end
+
+	playFunctionSound()
+end)
+
+healButton.Activated:Connect(function()
+	healPlayer()
+	playFunctionSound()
+end)
+
+resetButton.Activated:Connect(function()
+	resetPlayer()
+	playFunctionSound()
+end)
+
+espButton.Activated:Connect(function()
+	state.espEnabled = not state.espEnabled
+	espButton.Text = "ESP: " .. (state.espEnabled and "ON" or "OFF")
+
+	if state.espEnabled then
+		refreshESPAll()
+	else
+		clearESPAll()
+	end
+
+	setStatus("esp " .. (state.espEnabled and "on" or "off"))
+	playFunctionSound()
+end)
+
+ragdollButton.Activated:Connect(function()
+	ragdollSelf(not state.ragdolled)
+	ragdollButton.Text = "Ragdoll: " .. (state.ragdolled and "ON" or "OFF")
+	playFunctionSound()
+end)
+
+minimizeButton.Activated:Connect(function()
+	main.Visible = false
+	openButton.Visible = true
+	setStatus("menu minimized")
+	playFunctionSound()
+end)
+
+closeButton.Activated:Connect(function()
+	stopFly()
+	unlock()
+	clearESPAll()
+	gui:Destroy()
+end)
+
+openButton.Activated:Connect(function()
+	main.Visible = true
+	openButton.Visible = false
+	setStatus("menu opened")
+	playFunctionSound()
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then
+		return
+	end
+
+	if waitingBind and input.UserInputType == Enum.UserInputType.Keyboard then
+		state.keybinds[waitingBind] = input.KeyCode
+		updateBindButton(waitingBind)
+		setStatus(waitingBind .. " bound to " .. input.KeyCode.Name)
+		waitingBind = nil
+		playFunctionSound()
+		return
+	end
+
+	for command, keyCode in pairs(state.keybinds) do
+		if keyCode and input.KeyCode == keyCode then
+			if command == "Heal" then
+				healPlayer()
+			elseif command == "Reset" then
+				resetPlayer()
+			elseif command == "Ragdoll" then
+				ragdollSelf(not state.ragdolled)
+				ragdollButton.Text = "Ragdoll: " .. (state.ragdolled and "ON" or "OFF")
+			elseif command == "Fly" then
+				if state.flying then
+					stopFly()
+					flyButton.Text = "Fly: OFF"
+				else
+					startFly()
+					flyButton.Text = "Fly: ON"
+				end
+			elseif command == "ESP" then
+				state.espEnabled = not state.espEnabled
+				espButton.Text = "ESP: " .. (state.espEnabled and "ON" or "OFF")
+
+				if state.espEnabled then
+					refreshESPAll()
+				else
+					clearESPAll()
+				end
+			elseif command == "Speed" then
+				if humanoid then
+					humanoid.WalkSpeed = state.walkSpeed
+				end
+			elseif command == "Lock" then
+				state.lockEnabled = not state.lockEnabled
+				lockButton.Text = "Lock On: " .. (state.lockEnabled and "ON" or "OFF")
+
+				if state.lockEnabled then
+					local target = getBestTarget()
+					if target then
+						lockOn(target)
+					end
+				else
+					unlock()
+				end
+			elseif command == "TPClick" then
+				state.tpMode = not state.tpMode
+				tpButton.Text = "Click TP: " .. (state.tpMode and "ON" or "OFF")
+			end
+
+			playFunctionSound()
+		end
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		teleportToMouse()
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton3
+		and state.lockEnabled then
+
+		if state.lockTarget then
+			unlock()
+		else
+			local target = getBestTarget()
+
+			if target then
+				lockOn(target)
+			end
+		end
+	end
+
+	if input.KeyCode == Enum.KeyCode.W then
+		flyKeys.W = true
+	elseif input.KeyCode == Enum.KeyCode.A then
+		flyKeys.A = true
+	elseif input.KeyCode == Enum.KeyCode.S then
+		flyKeys.S = true
+	elseif input.KeyCode == Enum.KeyCode.D then
+		flyKeys.D = true
+	elseif input.KeyCode == Enum.KeyCode.Space then
+		flyKeys.Space = true
+	elseif input.KeyCode == Enum.KeyCode.LeftControl then
+		flyKeys.Ctrl = true
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.W then
+		flyKeys.W = false
+	elseif input.KeyCode == Enum.KeyCode.A then
+		flyKeys.A = false
+	elseif input.KeyCode == Enum.KeyCode.S then
+		flyKeys.S = false
+	elseif input.KeyCode == Enum.KeyCode.D then
+		flyKeys.D = false
+	elseif input.KeyCode == Enum.KeyCode.Space then
+		flyKeys.Space = false
+	elseif input.KeyCode == Enum.KeyCode.LeftControl then
+		flyKeys.Ctrl = false
+	end
+end)
+
+RunService.RenderStepped:Connect(function()
+	if not state.lockTarget then
+		return
+	end
+
+	if not state.lockTarget.Character then
+		unlock()
+		return
+	end
+
+	local targetPart = getTargetPart(state.lockTarget)
+	local targetHumanoid = state.lockTarget.Character:FindFirstChildOfClass("Humanoid")
+
+	if not targetPart or not targetHumanoid or targetHumanoid.Health <= 0 then
+		unlock()
+		return
+	end
+
+	if not root then
+		return
+	end
+
+	local targetPosition = targetPart.Position
+	local desiredPosition =
+		root.Position
+		- root.CFrame.LookVector * 10
+		+ Vector3.new(0, 2.5, 0)
+
+	local desiredCamera = CFrame.new(
+		desiredPosition,
+		targetPosition
+	)
+
+	camera.CameraType = Enum.CameraType.Scriptable
+	camera.CFrame = camera.CFrame:Lerp(desiredCamera, 0.14)
+
+	root.CFrame = CFrame.new(
+		root.Position,
+		Vector3.new(targetPosition.X, root.Position.Y, targetPosition.Z)
+	)
+
+	if lockBillboard and lockBillboard.Adornee ~= targetPart then
+		lockBillboard.Adornee = targetPart
+	end
+end)
+
+player.CharacterAdded:Connect(function(char)
+	stopFly()
+	clearLockVisual()
+	setCharacter(char)
+
+	if state.espEnabled then
+		task.defer(refreshESPAll)
+	end
+
+	if main and main.Parent then
+		setStatus("character updated")
+	end
+end)
+
+refreshPlayers()
+setStatus("ready")
