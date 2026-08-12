@@ -1,8 +1,6 @@
 --[[
 	Debug Menu v3.0
 	Public release for GitHub
-	Style: LowHUB inspired
-	Features: Fly, ESP, Lock, TP, Macros, Info, Commands, Draggable Overlays
 ]]
 
 local Players = game:GetService("Players")
@@ -378,7 +376,7 @@ local function animateMenuIn()
 	main.BackgroundTransparency = 1
 	main.Size = UDim2.new(0, 580, 0, 640)
 
-	local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
 	local bgTween = TweenService:Create(
 		main,
@@ -841,20 +839,35 @@ settingsScroll.Position = UDim2.new(0, 5, 0, 5)
 settingsScroll.BackgroundTransparency = 1
 settingsScroll.BorderSizePixel = 0
 settingsScroll.ScrollBarThickness = 5
-settingsScroll.CanvasSize = UDim2.new(0, 0, 0, 850)
+settingsScroll.CanvasSize = UDim2.new(0, 0, 0, 950)
 settingsScroll.ZIndex = 4
 settingsScroll.Parent = tabFrames.Settings
+
+local flySectionLabel = makeLabel(
+	settingsScroll,
+	"Fly",
+	UDim2.new(0, 0, 0, 8),
+	UDim2.new(1, 0, 0, 18)
+)
+
+local flySectionLine = Instance.new("Frame")
+flySectionLine.Size = UDim2.new(1, 0, 0, 1)
+flySectionLine.Position = UDim2.new(0, 0, 0, 28)
+flySectionLine.BackgroundColor3 = Color3.fromRGB(70, 85, 110)
+flySectionLine.BorderSizePixel = 0
+flySectionLine.ZIndex = 5
+flySectionLine.Parent = settingsScroll
 
 local flySpeedLabel = makeLabel(
 	settingsScroll,
 	"Fly Speed: 120",
-	UDim2.new(0, 0, 0, 8),
+	UDim2.new(0, 0, 0, 38),
 	UDim2.new(1, 0, 0, 18)
 )
 
 local flySlider = Instance.new("Frame")
 flySlider.Size = UDim2.new(1, 0, 0, 16)
-flySlider.Position = UDim2.new(0, 0, 0, 34)
+flySlider.Position = UDim2.new(0, 0, 0, 64)
 flySlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
 flySlider.BorderSizePixel = 0
 flySlider.Active = true
@@ -916,7 +929,7 @@ flyNoclipToggle = makeButton(
 	settingsScroll,
 	"Fly Noclip: OFF",
 	Color3.fromRGB(62, 68, 82),
-	UDim2.new(0, 0, 0, 70),
+	UDim2.new(0, 0, 0, 100),
 	UDim2.new(1, 0, 0, 32)
 )
 
@@ -940,154 +953,25 @@ flyNoclipToggle.Activated:Connect(function()
 	playFunctionSound()
 end)
 
-local walkSpeedLabel = makeLabel(
+local lockSectionLabel = makeLabel(
 	settingsScroll,
-	"WalkSpeed: 16",
-	UDim2.new(0, 0, 0, 115),
+	"Lock On",
+	UDim2.new(0, 0, 0, 150),
 	UDim2.new(1, 0, 0, 18)
 )
 
-local walkSlider = Instance.new("Frame")
-walkSlider.Size = UDim2.new(1, 0, 0, 16)
-walkSlider.Position = UDim2.new(0, 0, 0, 141)
-walkSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
-walkSlider.BorderSizePixel = 0
-walkSlider.Active = true
-walkSlider.ZIndex = 5
-walkSlider.Parent = settingsScroll
-
-roundify(walkSlider, 8)
-addStroke(walkSlider, Color3.fromRGB(70, 85, 110), 1, 0.4)
-
-local walkFill = Instance.new("Frame")
-walkFill.Size = UDim2.new((state.walkSpeed - 8) / 32, 0, 1, 0)
-walkFill.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
-walkFill.BorderSizePixel = 0
-walkFill.ZIndex = 6
-walkFill.Parent = walkSlider
-
-roundify(walkFill, 8)
-
-local walkKnob = Instance.new("Frame")
-walkKnob.Size = UDim2.new(0, 16, 0, 16)
-walkKnob.Position = UDim2.new((state.walkSpeed - 8) / 32, -8, 0.5, -8)
-walkKnob.BackgroundColor3 = Color3.fromRGB(235, 237, 245)
-walkKnob.BorderSizePixel = 0
-walkKnob.ZIndex = 7
-walkKnob.Parent = walkSlider
-
-roundify(walkKnob, 8)
-
-local function updateWalkSpeed(x)
-	local relative = math.clamp(
-		(x - walkSlider.AbsolutePosition.X) / walkSlider.AbsoluteSize.X,
-		0,
-		1
-	)
-
-	state.walkSpeed = math.floor(8 + relative * 32)
-	walkFill.Size = UDim2.new(relative, 0, 1, 0)
-	walkKnob.Position = UDim2.new(relative, -8, 0.5, -8)
-	walkSpeedLabel.Text = "WalkSpeed: " .. state.walkSpeed
-
-	if humanoid then
-		humanoid.WalkSpeed = state.walkSpeed
-	end
-
-	setStatus("walk speed " .. state.walkSpeed)
-	saveSettings()
-end
-
-walkSlider.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		updateWalkSpeed(input.Position.X)
-		playFunctionSound()
-	end
-end)
-
-walkSlider.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement
-		and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-		updateWalkSpeed(input.Position.X)
-	end
-end)
-
-local jumpPowerLabel = makeLabel(
-	settingsScroll,
-	"JumpPower: 50",
-	UDim2.new(0, 0, 0, 175),
-	UDim2.new(1, 0, 0, 18)
-)
-
-local jumpPowerSlider = Instance.new("Frame")
-jumpPowerSlider.Size = UDim2.new(1, 0, 0, 16)
-jumpPowerSlider.Position = UDim2.new(0, 0, 0, 201)
-jumpPowerSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
-jumpPowerSlider.BorderSizePixel = 0
-jumpPowerSlider.Active = true
-jumpPowerSlider.ZIndex = 5
-jumpPowerSlider.Parent = settingsScroll
-
-roundify(jumpPowerSlider, 8)
-addStroke(jumpPowerSlider, Color3.fromRGB(70, 85, 110), 1, 0.4)
-
-local jumpPowerFill = Instance.new("Frame")
-jumpPowerFill.Size = UDim2.new((state.jumpPower - 10) / 90, 0, 1, 0)
-jumpPowerFill.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
-jumpPowerFill.BorderSizePixel = 0
-jumpPowerFill.ZIndex = 6
-jumpPowerFill.Parent = jumpPowerSlider
-
-roundify(jumpPowerFill, 8)
-
-local jumpPowerKnob = Instance.new("Frame")
-jumpPowerKnob.Size = UDim2.new(0, 16, 0, 16)
-jumpPowerKnob.Position = UDim2.new((state.jumpPower - 10) / 90, -8, 0.5, -8)
-jumpPowerKnob.BackgroundColor3 = Color3.fromRGB(235, 237, 245)
-jumpPowerKnob.BorderSizePixel = 0
-jumpPowerKnob.ZIndex = 7
-jumpPowerKnob.Parent = jumpPowerSlider
-
-roundify(jumpPowerKnob, 8)
-
-local function updateJumpPower(x)
-	local relative = math.clamp(
-		(x - jumpPowerSlider.AbsolutePosition.X) / jumpPowerSlider.AbsoluteSize.X,
-		0,
-		1
-	)
-
-	state.jumpPower = math.floor(10 + relative * 90)
-	jumpPowerFill.Size = UDim2.new(relative, 0, 1, 0)
-	jumpPowerKnob.Position = UDim2.new(relative, -8, 0.5, -8)
-	jumpPowerLabel.Text = "JumpPower: " .. state.jumpPower
-
-	if humanoid then
-		humanoid.JumpPower = state.jumpPower
-	end
-
-	setStatus("jump power " .. state.jumpPower)
-	saveSettings()
-end
-
-jumpPowerSlider.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		updateJumpPower(input.Position.X)
-		playFunctionSound()
-	end
-end)
-
-jumpPowerSlider.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement
-		and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-		updateJumpPower(input.Position.X)
-	end
-end)
+local lockSectionLine = Instance.new("Frame")
+lockSectionLine.Size = UDim2.new(1, 0, 0, 1)
+lockSectionLine.Position = UDim2.new(0, 0, 0, 170)
+lockSectionLine.BackgroundColor3 = Color3.fromRGB(70, 85, 110)
+lockSectionLine.BorderSizePixel = 0
+lockSectionLine.ZIndex = 5
+lockSectionLine.Parent = settingsScroll
 
 local lockLabel = makeLabel(
 	settingsScroll,
 	"Lock Target: Body",
-	UDim2.new(0, 0, 0, 235),
+	UDim2.new(0, 0, 0, 180),
 	UDim2.new(1, 0, 0, 18)
 )
 
@@ -1095,13 +979,13 @@ local lockDropdown = makeButton(
 	settingsScroll,
 	"Lock Target: Body",
 	Color3.fromRGB(28, 32, 45),
-	UDim2.new(0, 0, 0, 261),
+	UDim2.new(0, 0, 0, 206),
 	UDim2.new(1, 0, 0, 32)
 )
 
 local lockOptions = Instance.new("Frame")
 lockOptions.Size = UDim2.new(1, 0, 0, 0)
-lockOptions.Position = UDim2.new(0, 0, 0, 301)
+lockOptions.Position = UDim2.new(0, 0, 0, 246)
 lockOptions.BackgroundTransparency = 1
 lockOptions.Visible = false
 lockOptions.ClipsDescendants = true
@@ -1143,10 +1027,25 @@ lockDropdown.Activated:Connect(function()
 	playFunctionSound()
 end)
 
+local espSectionLabel = makeLabel(
+	settingsScroll,
+	"ESP",
+	UDim2.new(0, 0, 0, 300),
+	UDim2.new(1, 0, 0, 18)
+)
+
+local espSectionLine = Instance.new("Frame")
+espSectionLine.Size = UDim2.new(1, 0, 0, 1)
+espSectionLine.Position = UDim2.new(0, 0, 0, 320)
+espSectionLine.BackgroundColor3 = Color3.fromRGB(70, 85, 110)
+espSectionLine.BorderSizePixel = 0
+espSectionLine.ZIndex = 5
+espSectionLine.Parent = settingsScroll
+
 local espTitle = makeLabel(
 	settingsScroll,
 	"ESP options",
-	UDim2.new(0, 0, 0, 355),
+	UDim2.new(0, 0, 0, 330),
 	UDim2.new(1, 0, 0, 18)
 )
 
@@ -1178,21 +1077,21 @@ local function createOptionToggle(text, key, y)
 	return button
 end
 
-createOptionToggle("Highlight", "highlight", 381)
-createOptionToggle("HP", "hp", 417)
-createOptionToggle("Name", "name", 453)
-createOptionToggle("Color By Team", "colorByTeam", 489)
+createOptionToggle("Highlight", "highlight", 356)
+createOptionToggle("HP", "hp", 392)
+createOptionToggle("Name", "name", 428)
+createOptionToggle("Color By Team", "colorByTeam", 464)
 
 local distanceLabel = makeLabel(
 	settingsScroll,
 	"ESP Distance: 200",
-	UDim2.new(0, 0, 0, 525),
+	UDim2.new(0, 0, 0, 500),
 	UDim2.new(1, 0, 0, 18)
 )
 
 local distanceSlider = Instance.new("Frame")
 distanceSlider.Size = UDim2.new(1, 0, 0, 16)
-distanceSlider.Position = UDim2.new(0, 0, 0, 551)
+distanceSlider.Position = UDim2.new(0, 0, 0, 526)
 distanceSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
 distanceSlider.BorderSizePixel = 0
 distanceSlider.Active = true
@@ -1269,13 +1168,13 @@ end)
 local hpThresholdLabel = makeLabel(
 	settingsScroll,
 	"ESP HP Threshold: 50",
-	UDim2.new(0, 0, 0, 587),
+	UDim2.new(0, 0, 0, 562),
 	UDim2.new(1, 0, 0, 18)
 )
 
 local hpThresholdSlider = Instance.new("Frame")
 hpThresholdSlider.Size = UDim2.new(1, 0, 0, 16)
-hpThresholdSlider.Position = UDim2.new(0, 0, 0, 613)
+hpThresholdSlider.Position = UDim2.new(0, 0, 0, 588)
 hpThresholdSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
 hpThresholdSlider.BorderSizePixel = 0
 hpThresholdSlider.Active = true
@@ -1340,13 +1239,13 @@ end)
 local maxDistanceLabel = makeLabel(
 	settingsScroll,
 	"ESP Max Distance: 300",
-	UDim2.new(0, 0, 0, 649),
+	UDim2.new(0, 0, 0, 624),
 	UDim2.new(1, 0, 0, 18)
 )
 
 local maxDistanceSlider = Instance.new("Frame")
 maxDistanceSlider.Size = UDim2.new(1, 0, 0, 16)
-maxDistanceSlider.Position = UDim2.new(0, 0, 0, 675)
+maxDistanceSlider.Position = UDim2.new(0, 0, 0, 650)
 maxDistanceSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
 maxDistanceSlider.BorderSizePixel = 0
 maxDistanceSlider.Active = true
@@ -1412,7 +1311,7 @@ local teamOnlyToggle = makeButton(
 	settingsScroll,
 	"ESP Team Only: OFF",
 	Color3.fromRGB(62, 68, 82),
-	UDim2.new(0, 0, 0, 711),
+	UDim2.new(0, 0, 0, 686),
 	UDim2.new(1, 0, 0, 30)
 )
 
@@ -1431,11 +1330,26 @@ teamOnlyToggle.Activated:Connect(function()
 	playFunctionSound()
 end)
 
+local otherSectionLabel = makeLabel(
+	settingsScroll,
+	"Other",
+	UDim2.new(0, 0, 0, 730),
+	UDim2.new(1, 0, 0, 18)
+)
+
+local otherSectionLine = Instance.new("Frame")
+otherSectionLine.Size = UDim2.new(1, 0, 0, 1)
+otherSectionLine.Position = UDim2.new(0, 0, 0, 750)
+otherSectionLine.BackgroundColor3 = Color3.fromRGB(70, 85, 110)
+otherSectionLine.BorderSizePixel = 0
+otherSectionLine.ZIndex = 5
+otherSectionLine.Parent = settingsScroll
+
 local overlayPingToggle = makeButton(
 	settingsScroll,
 	"Overlay Ping: OFF",
 	Color3.fromRGB(62, 68, 82),
-	UDim2.new(0, 0, 0, 749),
+	UDim2.new(0, 0, 0, 760),
 	UDim2.new(1, 0, 0, 30)
 )
 
@@ -1458,7 +1372,7 @@ local overlayFpsToggle = makeButton(
 	settingsScroll,
 	"Overlay FPS: OFF",
 	Color3.fromRGB(62, 68, 82),
-	UDim2.new(0, 0, 0, 787),
+	UDim2.new(0, 0, 0, 798),
 	UDim2.new(1, 0, 0, 30)
 )
 
@@ -1481,7 +1395,7 @@ local overlayHpToggle = makeButton(
 	settingsScroll,
 	"Overlay HP: OFF",
 	Color3.fromRGB(62, 68, 82),
-	UDim2.new(0, 0, 0, 825),
+	UDim2.new(0, 0, 0, 836),
 	UDim2.new(1, 0, 0, 30)
 )
 
@@ -1500,17 +1414,161 @@ overlayHpToggle.Activated:Connect(function()
 	playFunctionSound()
 end)
 
+local walkSpeedLabel = makeLabel(
+	settingsScroll,
+	"WalkSpeed: 16",
+	UDim2.new(0, 0, 0, 880),
+	UDim2.new(1, 0, 0, 18)
+)
+
+local walkSlider = Instance.new("Frame")
+walkSlider.Size = UDim2.new(1, 0, 0, 16)
+walkSlider.Position = UDim2.new(0, 0, 0, 906)
+walkSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
+walkSlider.BorderSizePixel = 0
+walkSlider.Active = true
+walkSlider.ZIndex = 5
+walkSlider.Parent = settingsScroll
+
+roundify(walkSlider, 8)
+addStroke(walkSlider, Color3.fromRGB(70, 85, 110), 1, 0.4)
+
+local walkFill = Instance.new("Frame")
+walkFill.Size = UDim2.new((state.walkSpeed - 8) / 32, 0, 1, 0)
+walkFill.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
+walkFill.BorderSizePixel = 0
+walkFill.ZIndex = 6
+walkFill.Parent = walkSlider
+
+roundify(walkFill, 8)
+
+local walkKnob = Instance.new("Frame")
+walkKnob.Size = UDim2.new(0, 16, 0, 16)
+walkKnob.Position = UDim2.new((state.walkSpeed - 8) / 32, -8, 0.5, -8)
+walkKnob.BackgroundColor3 = Color3.fromRGB(235, 237, 245)
+walkKnob.BorderSizePixel = 0
+walkKnob.ZIndex = 7
+walkKnob.Parent = walkSlider
+
+roundify(walkKnob, 8)
+
+local function updateWalkSpeed(x)
+	local relative = math.clamp(
+		(x - walkSlider.AbsolutePosition.X) / walkSlider.AbsoluteSize.X,
+		0,
+		1
+	)
+
+	state.walkSpeed = math.floor(8 + relative * 32)
+	walkFill.Size = UDim2.new(relative, 0, 1, 0)
+	walkKnob.Position = UDim2.new(relative, -8, 0.5, -8)
+	walkSpeedLabel.Text = "WalkSpeed: " .. state.walkSpeed
+
+	if humanoid then
+		humanoid.WalkSpeed = state.walkSpeed
+	end
+
+	setStatus("walk speed " .. state.walkSpeed)
+	saveSettings()
+end
+
+walkSlider.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		updateWalkSpeed(input.Position.X)
+		playFunctionSound()
+	end
+end)
+
+walkSlider.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement
+		and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+		updateWalkSpeed(input.Position.X)
+	end
+end)
+
+local jumpPowerLabel = makeLabel(
+	settingsScroll,
+	"JumpPower: 50",
+	UDim2.new(0, 0, 0, 940),
+	UDim2.new(1, 0, 0, 18)
+)
+
+local jumpPowerSlider = Instance.new("Frame")
+jumpPowerSlider.Size = UDim2.new(1, 0, 0, 16)
+jumpPowerSlider.Position = UDim2.new(0, 0, 0, 966)
+jumpPowerSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
+jumpPowerSlider.BorderSizePixel = 0
+jumpPowerSlider.Active = true
+jumpPowerSlider.ZIndex = 5
+jumpPowerSlider.Parent = settingsScroll
+
+roundify(jumpPowerSlider, 8)
+addStroke(jumpPowerSlider, Color3.fromRGB(70, 85, 110), 1, 0.4)
+
+local jumpPowerFill = Instance.new("Frame")
+jumpPowerFill.Size = UDim2.new((state.jumpPower - 10) / 90, 0, 1, 0)
+jumpPowerFill.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
+jumpPowerFill.BorderSizePixel = 0
+jumpPowerFill.ZIndex = 6
+jumpPowerFill.Parent = jumpPowerSlider
+
+roundify(jumpPowerFill, 8)
+
+local jumpPowerKnob = Instance.new("Frame")
+jumpPowerKnob.Size = UDim2.new(0, 16, 0, 16)
+jumpPowerKnob.Position = UDim2.new((state.jumpPower - 10) / 90, -8, 0.5, -8)
+jumpPowerKnob.BackgroundColor3 = Color3.fromRGB(235, 237, 245)
+jumpPowerKnob.BorderSizePixel = 0
+jumpPowerKnob.ZIndex = 7
+jumpPowerKnob.Parent = jumpPowerSlider
+
+roundify(jumpPowerKnob, 8)
+
+local function updateJumpPower(x)
+	local relative = math.clamp(
+		(x - jumpPowerSlider.AbsolutePosition.X) / jumpPowerSlider.AbsoluteSize.X,
+		0,
+		1
+	)
+
+	state.jumpPower = math.floor(10 + relative * 90)
+	jumpPowerFill.Size = UDim2.new(relative, 0, 1, 0)
+	jumpPowerKnob.Position = UDim2.new(relative, -8, 0.5, -8)
+	jumpPowerLabel.Text = "JumpPower: " .. state.jumpPower
+
+	if humanoid then
+		humanoid.JumpPower = state.jumpPower
+	end
+
+	setStatus("jump power " .. state.jumpPower)
+	saveSettings()
+end
+
+jumpPowerSlider.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		updateJumpPower(input.Position.X)
+		playFunctionSound()
+	end
+end)
+
+jumpPowerSlider.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement
+		and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+		updateJumpPower(input.Position.X)
+	end
+end)
+
 local themeDropdown = makeButton(
 	settingsScroll,
 	"Theme: Dark",
 	Color3.fromRGB(28, 32, 45),
-	UDim2.new(0, 0, 0, 863),
+	UDim2.new(0, 0, 0, 1000),
 	UDim2.new(1, 0, 0, 32)
 )
 
 local themeOptions = Instance.new("Frame")
 themeOptions.Size = UDim2.new(1, 0, 0, 0)
-themeOptions.Position = UDim2.new(0, 0, 0, 903)
+themeOptions.Position = UDim2.new(0, 0, 0, 1040)
 themeOptions.BackgroundTransparency = 1
 themeOptions.Visible = false
 themeOptions.ClipsDescendants = true
@@ -1617,6 +1675,7 @@ local jumpPowerInfoLabel = makeLabel(
 local fpsCounter = 0
 local frameAccumulator = 0
 local lastFpsUpdate = 0
+local pingValue = 0
 
 local function updateInfo()
 	if not humanoid or not root then
@@ -1639,8 +1698,9 @@ local function updateInfo()
 		end
 	end
 
-	local ping = StatsService and StatsService:GetStatistics().Ping or 0
-	pingLabel.Text = "Ping: " .. math.floor(ping) .. "ms"
+	local stats = StatsService and StatsService:GetStatistics()
+	pingValue = stats and stats.Ping or player:GetNetworkPing() * 1000
+	pingLabel.Text = "Ping: " .. math.floor(pingValue) .. "ms"
 
 	posXLabel.Text = "Position X: " .. string.format("%.2f", root.Position.X)
 	posYLabel.Text = "Position Y: " .. string.format("%.2f", root.Position.Y)
@@ -1662,7 +1722,7 @@ local function updateInfo()
 	end
 
 	if pingOverlay then
-		pingOverlay.TextLabel.Text = "Ping: " .. math.floor(ping) .. "ms"
+		pingOverlay.TextLabel.Text = "Ping: " .. math.floor(pingValue) .. "ms"
 	end
 
 	if hpOverlay then
@@ -2916,6 +2976,8 @@ loadSettings()
 applyTheme(state.theme)
 refreshPlayers()
 setStatus("ready")
+
+animateMenuIn()
 
 if state.toggles.Macro then
 	macroButton.Text = "Macro: ON"
