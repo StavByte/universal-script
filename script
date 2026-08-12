@@ -1,6 +1,8 @@
 --[[
 	Debug Menu v3.0
 	Public release for GitHub
+	Style: LowHUB inspired
+	Features: Fly, ESP, Lock, TP, Macros, Info, Commands, Draggable Overlays
 ]]
 
 local Players = game:GetService("Players")
@@ -70,6 +72,9 @@ local overlayState = {
 	ping = false,
 	hp = false,
 }
+
+local followTarget = nil
+local followConnection = nil
 
 local function addLogEntry(text)
 	table.insert(eventLog, 1, os.clock() .. " | " .. text)
@@ -1675,7 +1680,6 @@ local jumpPowerInfoLabel = makeLabel(
 local fpsCounter = 0
 local frameAccumulator = 0
 local lastFpsUpdate = 0
-local pingValue = 0
 
 local function updateInfo()
 	if not humanoid or not root then
@@ -1699,8 +1703,8 @@ local function updateInfo()
 	end
 
 	local stats = StatsService and StatsService:GetStatistics()
-	pingValue = stats and stats.Ping or player:GetNetworkPing() * 1000
-	pingLabel.Text = "Ping: " .. math.floor(pingValue) .. "ms"
+	local ping = stats and stats.Ping or 0
+	pingLabel.Text = "Ping: " .. math.floor(ping) .. "ms"
 
 	posXLabel.Text = "Position X: " .. string.format("%.2f", root.Position.X)
 	posYLabel.Text = "Position Y: " .. string.format("%.2f", root.Position.Y)
@@ -1722,7 +1726,7 @@ local function updateInfo()
 	end
 
 	if pingOverlay then
-		pingOverlay.TextLabel.Text = "Ping: " .. math.floor(pingValue) .. "ms"
+		pingOverlay.TextLabel.Text = "Ping: " .. math.floor(ping) .. "ms"
 	end
 
 	if hpOverlay then
@@ -1878,6 +1882,41 @@ local function clearPlayerRows()
 	end
 end
 
+local function stopFollow()
+	if followConnection then
+		followConnection:Disconnect()
+		followConnection = nil
+	end
+	followTarget = nil
+	setStatus("follow stopped")
+end
+
+local function startFollow(plr)
+	stopFollow()
+	followTarget = plr
+
+	followConnection = RunService.RenderStepped:Connect(function()
+		if not followTarget or not followTarget.Character then
+			stopFollow()
+			return
+		end
+
+		if not character or not root then
+			return
+		end
+
+		local targetHRP = followTarget.Character:FindFirstChild("HumanoidRootPart")
+		if not targetHRP then
+			return
+		end
+
+		local desiredPos = targetHRP.CFrame * CFrame.new(0, 0, -4)
+		root.CFrame = desiredPos
+	end)
+
+	setStatus("following " .. plr.Name)
+end
+
 local function createPlayerRow(plr)
 	local row = Instance.new("Frame")
 	row.Size = UDim2.new(1, 0, 0, 58)
@@ -1891,7 +1930,7 @@ local function createPlayerRow(plr)
 	addStroke(row, Color3.fromRGB(70, 85, 110), 1, 0.5)
 
 	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Size = UDim2.new(1, -135, 0, 20)
+	nameLabel.Size = UDim2.new(1, -210, 0, 20)
 	nameLabel.Position = UDim2.new(0, 11, 0, 6)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Text = plr.DisplayName .. "  @" .. plr.Name
@@ -1902,11 +1941,19 @@ local function createPlayerRow(plr)
 	nameLabel.ZIndex = 6
 	nameLabel.Parent = row
 
+	local follow = makeButton(
+		row,
+		"Follow",
+		Color3.fromRGB(55, 155, 90),
+		UDim2.new(1, -160, 0, 7),
+		UDim2.new(0, 50, 0, 22)
+	)
+
 	local tp = makeButton(
 		row,
 		"TP",
 		Color3.fromRGB(55, 110, 215),
-		UDim2.new(1, -48, 0, 7),
+		UDim2.new(1, -102, 0, 7),
 		UDim2.new(0, 40, 0, 22)
 	)
 
@@ -1914,9 +1961,14 @@ local function createPlayerRow(plr)
 		row,
 		"Lock",
 		Color3.fromRGB(120, 82, 185),
-		UDim2.new(1, -62, 0, 32),
-		UDim2.new(0, 54, 0, 22)
+		UDim2.new(1, -54, 0, 32),
+		UDim2.new(0, 46, 0, 22)
 	)
+
+	follow.Activated:Connect(function()
+		startFollow(plr)
+		playFunctionSound()
+	end)
 
 	tp.Activated:Connect(function()
 		if not state.tpMode then
@@ -1971,7 +2023,13 @@ end
 
 playerSearch:GetPropertyChangedSignal("Text"):Connect(refreshPlayers)
 Players.PlayerAdded:Connect(refreshPlayers)
-Players.PlayerRemoving:Connect(refreshPlayers)
+Players.PlayerRemoving:Connect(function(plr)
+	if followTarget == plr then
+		stopFollow()
+	end
+	removeESP(plr)
+	refreshPlayers()
+end)
 
 local function createBindRow(parent, titleText, command, y)
 	local row = Instance.new("Frame")
@@ -2780,6 +2838,7 @@ end)
 
 closeButton.Activated:Connect(function()
 	stopFly()
+	stopFollow()
 	unlock()
 	clearESPAll()
 	setInvisible(false)
@@ -2959,6 +3018,7 @@ end)
 
 player.CharacterAdded:Connect(function(char)
 	stopFly()
+	stopFollow()
 	clearLockVisual()
 	setInvisible(false)
 	setCharacter(char)
