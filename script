@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -16,6 +17,7 @@ local main
 local openButton
 local statusLabel
 local debugLabel
+local logLabel
 
 local flyButton
 local tpButton
@@ -24,6 +26,7 @@ local healButton
 local resetButton
 local espButton
 local ragdollButton
+local freeCamButton
 
 local flyConnection
 local flyVelocity
@@ -44,8 +47,31 @@ local flyKeys = {
 	Ctrl = false,
 }
 
+local freeCamActive = false
+local freeCamConnection
+local freeCamVelocity = Vector3.zero
+local freeCamGyro = CFrame.new()
+
 local espObjects = {}
 local espConnections = {}
+
+local eventLog = {}
+
+local function addLogEntry(text)
+	table.insert(eventLog, 1, os.clock() .. " | " .. text)
+
+	if #eventLog > 20 then
+		table.remove(eventLog)
+	end
+
+	if logLabel then
+		local lines = {}
+		for i = 1, math.min(8, #eventLog) do
+			table.insert(lines, eventLog[i])
+		end
+		logLabel.Text = table.concat(lines, "\n")
+	end
+end
 
 local state = {
 	flying = false,
@@ -62,6 +88,16 @@ local state = {
 
 	ragdolled = false,
 
+	theme = "Dark",
+
+	espOptions = {
+		highlight = true,
+		hp = true,
+		name = true,
+		distance = 200,
+		teamOnly = false,
+	},
+
 	keybinds = {
 		Heal = nil,
 		Reset = nil,
@@ -71,14 +107,59 @@ local state = {
 		Speed = nil,
 		Lock = nil,
 		TPClick = nil,
-	},
-
-	espOptions = {
-		highlight = true,
-		hp = true,
-		name = true,
+		FreeCam = nil,
 	},
 }
+
+local function loadSettings()
+	local saved = playerGui:GetAttribute("DebugMenuV24_Settings")
+
+	if saved and typeof(saved) == "string" then
+		local success, data = pcall(function()
+			return game:GetService("HttpService"):JSONDecode(saved)
+		end)
+
+		if success and data then
+			if data.flySpeed then state.flySpeed = data.flySpeed end
+			if data.walkSpeed then state.walkSpeed = data.walkSpeed end
+			if data.espOptions then
+				for k, v in pairs(data.espOptions) do
+					state.espOptions[k] = v
+				end
+			end
+			if data.keybinds then
+				for k, v in pairs(data.keybinds) do
+					if typeof(v) == "string" then
+						local key = Enum.KeyCode[v]
+						if key then
+							state.keybinds[k] = key
+						end
+					end
+				end
+			end
+			if data.theme then state.theme = data.theme end
+		end
+	end
+end
+
+local function saveSettings()
+	local data = {
+		flySpeed = state.flySpeed,
+		walkSpeed = state.walkSpeed,
+		espOptions = state.espOptions,
+		keybinds = {},
+		theme = state.theme,
+	}
+
+	for k, v in pairs(state.keybinds) do
+		if v then
+			data.keybinds[k] = v.Name
+		end
+	end
+
+	local json = game:GetService("HttpService"):JSONEncode(data)
+	playerGui:SetAttribute("DebugMenuV24_Settings", json)
+end
 
 local function setCharacter(char)
 	character = char
@@ -90,7 +171,7 @@ setCharacter(player.Character or player.CharacterAdded:Wait())
 
 local function playUISound(soundId, playbackSpeed, volume, duration)
 	local sound = Instance.new("Sound")
-	sound.Name = "V23_TemporaryUISound"
+	sound.Name = "V24_TemporaryUISound"
 	sound.SoundId = soundId
 	sound.PlaybackSpeed = playbackSpeed or 1
 	sound.Volume = volume or 0.35
@@ -144,6 +225,7 @@ local function setStatus(text)
 	if statusLabel then
 		statusLabel.Text = "Status: " .. text
 	end
+	addLogEntry(text)
 end
 
 local function makeDraggable(handle, target)
@@ -236,8 +318,24 @@ local function makeButton(parent, text, color, position, size)
 	return button
 end
 
+local function applyTheme(themeName)
+	state.theme = themeName
+
+	if themeName == "Light" then
+		main.BackgroundColor3 = Color3.fromRGB(245, 247, 255)
+		statusLabel.TextColor3 = Color3.fromRGB(40, 45, 60)
+		debugLabel.TextColor3 = Color3.fromRGB(40, 45, 60)
+	elseif themeName == "Dark" then
+		main.BackgroundColor3 = Color3.fromRGB(14, 16, 23)
+		statusLabel.TextColor3 = Color3.fromRGB(170, 175, 190)
+		debugLabel.TextColor3 = Color3.fromRGB(120, 220, 145)
+	end
+
+	saveSettings()
+end
+
 gui = Instance.new("ScreenGui")
-gui.Name = "DebugMenuV23"
+gui.Name = "DebugMenuV24"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -246,8 +344,8 @@ gui.Parent = playerGui
 
 main = Instance.new("Frame")
 main.Name = "MainWindow"
-main.Size = UDim2.new(0, 590, 0, 650)
-main.Position = UDim2.new(0.5, -295, 0.5, -325)
+main.Size = UDim2.new(0, 620, 0, 680)
+main.Position = UDim2.new(0.5, -310, 0.5, -340)
 main.BackgroundColor3 = Color3.fromRGB(14, 16, 23)
 main.BorderSizePixel = 0
 main.Active = true
@@ -276,10 +374,10 @@ accent.ZIndex = 3
 accent.Parent = topbar
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -220, 1, 0)
+title.Size = UDim2.new(1, -260, 1, 0)
 title.Position = UDim2.new(0, 16, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "Debug Menu v2.3"
+title.Text = "Debug Menu v2.4"
 title.TextColor3 = Color3.fromRGB(245, 247, 255)
 title.Font = Enum.Font.GothamSemibold
 title.TextSize = 18
@@ -289,7 +387,7 @@ title.Parent = topbar
 
 debugLabel = Instance.new("TextLabel")
 debugLabel.Size = UDim2.new(0, 150, 0, 18)
-debugLabel.Position = UDim2.new(1, -280, 0, 18)
+debugLabel.Position = UDim2.new(1, -320, 0, 18)
 debugLabel.BackgroundTransparency = 1
 debugLabel.Text = "Clicks: OK"
 debugLabel.TextColor3 = Color3.fromRGB(120, 220, 145)
@@ -298,6 +396,18 @@ debugLabel.TextSize = 11
 debugLabel.TextXAlignment = Enum.TextXAlignment.Right
 debugLabel.ZIndex = 4
 debugLabel.Parent = topbar
+
+statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(0, 200, 0, 18)
+statusLabel.Position = UDim2.new(1, -530, 0, 18)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Status: ready"
+statusLabel.TextColor3 = Color3.fromRGB(170, 175, 190)
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 11
+statusLabel.TextXAlignment = Enum.TextXAlignment.Right
+statusLabel.ZIndex = 4
+statusLabel.Parent = topbar
 
 local minimizeButton = makeButton(
 	topbar,
@@ -357,8 +467,8 @@ resizeHandle.InputChanged:Connect(function(input)
 
 	if input.UserInputType == Enum.UserInputType.MouseMovement then
 		local delta = input.Position - resizeStart
-		local width = math.clamp(startSize.X.Offset + delta.X, 500, 850)
-		local height = math.clamp(startSize.Y.Offset + delta.Y, 520, 850)
+		local width = math.clamp(startSize.X.Offset + delta.X, 520, 900)
+		local height = math.clamp(startSize.Y.Offset + delta.Y, 540, 900)
 
 		main.Size = UDim2.new(0, width, 0, height)
 	end
@@ -390,7 +500,7 @@ content.Parent = main
 
 local tabFrames = {}
 
-for _, name in ipairs({"Main", "Players", "Settings", "Commands"}) do
+for _, name in ipairs({"Main", "Players", "Settings", "Commands", "Info", "Log"}) do
 	local frame = Instance.new("Frame")
 	frame.Name = name .. "Tab"
 	frame.Size = UDim2.new(1, 0, 1, 0)
@@ -417,7 +527,7 @@ local function createTabButton(text, x)
 		text,
 		Color3.fromRGB(36, 40, 53),
 		UDim2.new(0, x, 0, 0),
-		UDim2.new(0, 105, 0, 34)
+		UDim2.new(0, 95, 0, 34)
 	)
 
 	button.Activated:Connect(function()
@@ -437,11 +547,20 @@ local function createTabButton(text, x)
 end
 
 local mainTabButton = createTabButton("Main", 0)
-local playersTabButton = createTabButton("Players", 113)
-local settingsTabButton = createTabButton("Settings", 226)
-local commandsTabButton = createTabButton("Commands", 339)
+local playersTabButton = createTabButton("Players", 103)
+local settingsTabButton = createTabButton("Settings", 206)
+local commandsTabButton = createTabButton("Commands", 309)
+local infoTabButton = createTabButton("Info", 412)
+local logTabButton = createTabButton("Log", 515)
 
 mainTabButton.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
+
+logLabel = makeLabel(
+	tabFrames.Log,
+	"Event log will appear here.",
+	UDim2.new(0, 0, 0, 0),
+	UDim2.new(1, 0, 1, 0)
+)
 
 statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, 0, 0, 20)
@@ -511,11 +630,19 @@ ragdollButton = makeButton(
 	UDim2.new(1, 0, 0, 38)
 )
 
+freeCamButton = makeButton(
+	tabFrames.Main,
+	"Free Cam: OFF",
+	Color3.fromRGB(90, 190, 160),
+	UDim2.new(0, 0, 0, 366),
+	UDim2.new(1, 0, 0, 38)
+)
+
 makeLabel(
 	tabFrames.Main,
-	"Fly: W/A/S/D + Space + LeftControl\nClick TP: включи режим и нажми по поверхности.\nLock On: включи и используй среднюю кнопку мыши.",
-	UDim2.new(0, 0, 0, 370),
-	UDim2.new(1, 0, 0, 65)
+	"Fly: W/A/S/D + Space + LeftControl\nClick TP: включи режим и нажми по поверхности.\nLock On: включи и используй среднюю кнопку мыши.\nFree Cam: свободная камера без влияния на персонажа.",
+	UDim2.new(0, 0, 0, 420),
+	UDim2.new(1, 0, 0, 70)
 )
 
 local flySpeedLabel = makeLabel(
@@ -568,6 +695,7 @@ local function updateFlySpeed(x)
 	flyKnob.Position = UDim2.new(relative, -9, 0.5, -9)
 	flySpeedLabel.Text = "Fly Speed: " .. state.flySpeed
 	setStatus("fly speed " .. state.flySpeed)
+	saveSettings()
 end
 
 flySlider.InputBegan:Connect(function(input)
@@ -639,6 +767,7 @@ local function updateWalkSpeed(x)
 	end
 
 	setStatus("walk speed " .. state.walkSpeed)
+	saveSettings()
 end
 
 walkSlider.InputBegan:Connect(function(input)
@@ -742,6 +871,7 @@ local function createOptionToggle(text, key, y)
 			refreshESPAll()
 		end
 
+		saveSettings()
 		playFunctionSound()
 	end)
 
@@ -751,6 +881,177 @@ end
 createOptionToggle("Highlight", "highlight", 310)
 createOptionToggle("HP", "hp", 348)
 createOptionToggle("Name", "name", 386)
+
+local distanceLabel = makeLabel(
+	tabFrames.Settings,
+	"ESP Distance: 200",
+	UDim2.new(0, 0, 0, 424),
+	UDim2.new(1, 0, 0, 20)
+)
+
+local distanceSlider = Instance.new("Frame")
+distanceSlider.Size = UDim2.new(1, 0, 0, 18)
+distanceSlider.Position = UDim2.new(0, 0, 0, 454)
+distanceSlider.BackgroundColor3 = Color3.fromRGB(35, 39, 52)
+distanceSlider.BorderSizePixel = 0
+distanceSlider.Active = true
+distanceSlider.ZIndex = 5
+distanceSlider.Parent = tabFrames.Settings
+
+roundify(distanceSlider, 9)
+addStroke(distanceSlider, Color3.fromRGB(85, 95, 125), 1, 0.35)
+
+local distanceFill = Instance.new("Frame")
+distanceFill.Size = UDim2.new(state.espOptions.distance / 500, 0, 1, 0)
+distanceFill.BackgroundColor3 = Color3.fromRGB(75, 130, 255)
+distanceFill.BorderSizePixel = 0
+distanceFill.ZIndex = 6
+distanceFill.Parent = distanceSlider
+
+roundify(distanceFill, 9)
+
+local distanceKnob = Instance.new("Frame")
+distanceKnob.Size = UDim2.new(0, 18, 0, 18)
+distanceKnob.Position = UDim2.new(state.espOptions.distance / 500, -9, 0.5, -9)
+distanceKnob.BackgroundColor3 = Color3.fromRGB(245, 245, 250)
+distanceKnob.BorderSizePixel = 0
+distanceKnob.ZIndex = 7
+distanceKnob.Parent = distanceSlider
+
+roundify(distanceKnob, 9)
+
+local function updateESPDistance(x)
+	local relative = math.clamp(
+		(x - distanceSlider.AbsolutePosition.X) / distanceSlider.AbsoluteSize.X,
+		0,
+		1
+	)
+
+	state.espOptions.distance = math.floor(relative * 500)
+	distanceFill.Size = UDim2.new(relative, 0, 1, 0)
+	distanceKnob.Position = UDim2.new(relative, -9, 0.5, -9)
+	distanceLabel.Text = "ESP Distance: " .. state.espOptions.distance
+
+	if state.espEnabled then
+		refreshESPAll()
+	end
+
+	saveSettings()
+	playFunctionSound()
+end
+
+distanceSlider.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		updateESPDistance(input.Position.X)
+	end
+end)
+
+distanceSlider.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement
+		and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+		updateESPDistance(input.Position.X)
+	end
+end)
+
+local teamOnlyToggle = makeButton(
+	tabFrames.Settings,
+	"ESP Team Only: OFF",
+	Color3.fromRGB(75, 78, 92),
+	UDim2.new(0, 0, 0, 490),
+	UDim2.new(1, 0, 0, 32)
+)
+
+teamOnlyToggle.Activated:Connect(function()
+	state.espOptions.teamOnly = not state.espOptions.teamOnly
+	teamOnlyToggle.Text = "ESP Team Only: " .. (state.espOptions.teamOnly and "ON" or "OFF")
+	teamOnlyToggle.BackgroundColor3 = state.espOptions.teamOnly
+		and Color3.fromRGB(55, 125, 90)
+		or Color3.fromRGB(75, 78, 92)
+
+	if state.espEnabled then
+		refreshESPAll()
+	end
+
+	saveSettings()
+	playFunctionSound()
+end)
+
+local themeDropdown = makeButton(
+	tabFrames.Settings,
+	"Theme: Dark",
+	Color3.fromRGB(36, 40, 53),
+	UDim2.new(0, 0, 0, 530),
+	UDim2.new(1, 0, 0, 36)
+)
+
+local themeOptions = Instance.new("Frame")
+themeOptions.Size = UDim2.new(1, 0, 0, 0)
+themeOptions.Position = UDim2.new(0, 0, 0, 570)
+themeOptions.BackgroundTransparency = 1
+themeOptions.Visible = false
+themeOptions.ClipsDescendants = true
+themeOptions.ZIndex = 8
+themeOptions.Parent = tabFrames.Settings
+
+local themeLayout = Instance.new("UIListLayout")
+themeLayout.Padding = UDim.new(0, 5)
+themeLayout.Parent = themeOptions
+
+for _, theme in ipairs({"Dark", "Light"}) do
+	local option = makeButton(
+		themeOptions,
+		theme,
+		Color3.fromRGB(48, 53, 70),
+		UDim2.new(0, 0, 0, 0),
+		UDim2.new(1, 0, 0, 32)
+	)
+
+	option.Activated:Connect(function()
+		applyTheme(theme)
+		themeDropdown.Text = "Theme: " .. theme
+		themeOptions.Visible = false
+		themeOptions.Size = UDim2.new(1, 0, 0, 0)
+		playFunctionSound()
+	end)
+end
+
+themeDropdown.Activated:Connect(function()
+	themeOptions.Visible = not themeOptions.Visible
+
+	if themeOptions.Visible then
+		themeOptions.Size = UDim2.new(1, 0, 0, 69)
+	else
+		themeOptions.Size = UDim2.new(1, 0, 0, 0)
+	end
+
+	playFunctionSound()
+end)
+
+local infoLabel = makeLabel(
+	tabFrames.Info,
+	"Player info will appear here.",
+	UDim2.new(0, 0, 0, 0),
+	UDim2.new(1, 0, 1, 0)
+)
+
+local function updateInfo()
+	if not humanoid or not root then
+		return
+	end
+
+	local text = "Position: "
+		.. string.format("%.2f, %.2f, %.2f", root.Position.X, root.Position.Y, root.Position.Z)
+		.. "\n"
+		.. "Health: " .. math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
+		.. "\n"
+		.. "WalkSpeed: " .. humanoid.WalkSpeed
+		.. "\n"
+		.. "JumpPower: " .. humanoid.JumpPower
+
+	infoLabel.Text = text
+end
+
+RunService.RenderStepped:Connect(updateInfo)
 
 local playerSearch = Instance.new("TextBox")
 playerSearch.Size = UDim2.new(1, 0, 0, 36)
@@ -947,6 +1248,7 @@ bindButtons.ESP = createBindRow(tabFrames.Commands, "ESP", "ESP", 238)
 bindButtons.Speed = createBindRow(tabFrames.Commands, "Speed", "Speed", 288)
 bindButtons.Lock = createBindRow(tabFrames.Commands, "Lock", "Lock", 338)
 bindButtons.TPClick = createBindRow(tabFrames.Commands, "Click TP", "TPClick", 388)
+bindButtons.FreeCam = createBindRow(tabFrames.Commands, "Free Cam", "FreeCam", 438)
 
 local function updateBindText(command)
 	local bindButton = bindButtons[command]
@@ -1124,13 +1426,13 @@ local function startFly()
 	state.flying = true
 
 	flyVelocity = Instance.new("BodyVelocity")
-	flyVelocity.Name = "V23_FlyVelocity"
+	flyVelocity.Name = "V24_FlyVelocity"
 	flyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
 	flyVelocity.Velocity = Vector3.zero
 	flyVelocity.Parent = root
 
 	flyGyro = Instance.new("BodyGyro")
-	flyGyro.Name = "V23_FlyGyro"
+	flyGyro.Name = "V24_FlyGyro"
 	flyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
 	flyGyro.P = 1e4
 	flyGyro.CFrame = root.CFrame
@@ -1189,6 +1491,98 @@ local function startFly()
 		flyVelocity.Velocity = movement
 		flyGyro.CFrame = cam.CFrame
 	end)
+end
+
+local function startFreeCam()
+	if freeCamActive then
+		return
+	end
+
+	freeCamActive = true
+	freeCamVelocity = Vector3.zero
+	freeCamGyro = camera.CFrame
+
+	local dummyPart = Instance.new("Part")
+	dummyPart.Name = "FreeCamDummy"
+	dummyPart.Anchored = true
+	dummyPart.CanCollide = false
+	dummyPart.Transparency = 1
+	dummyPart.Size = Vector3.new(1, 1, 1)
+	dummyPart.CFrame = camera.CFrame
+	dummyPart.Parent = workspace
+
+	freeCamConnection = RunService.RenderStepped:Connect(function()
+		if not freeCamActive then
+			return
+		end
+
+		local movement = Vector3.zero
+		local cam = workspace.CurrentCamera
+
+		if flyKeys.W then
+			movement += cam.CFrame.LookVector
+		end
+
+		if flyKeys.S then
+			movement -= cam.CFrame.LookVector
+		end
+
+		if flyKeys.D then
+			movement += cam.CFrame.RightVector
+		end
+
+		if flyKeys.A then
+			movement -= cam.CFrame.RightVector
+		end
+
+		if flyKeys.Space then
+			movement += Vector3.new(0, 1, 0)
+		end
+
+		if flyKeys.Ctrl then
+			movement -= Vector3.new(0, 1, 0)
+		end
+
+		if movement.Magnitude > 0 then
+			movement = movement.Unit * (state.flySpeed * 0.8)
+		end
+
+		freeCamVelocity = movement
+		freeCamGyro = freeCamGyro:Lerp(
+			CFrame.new(freeCamGyro.Position + freeCamVelocity, freeCamGyro.Position + freeCamGyro.LookVector),
+			0.2
+		)
+
+		dummyPart.CFrame = freeCamGyro
+		camera.CFrame = freeCamGyro
+	end)
+
+	setStatus("free cam on")
+	playFunctionSound()
+end
+
+local function stopFreeCam()
+	if not freeCamActive then
+		return
+	end
+
+	freeCamActive = false
+
+	if freeCamConnection then
+		freeCamConnection:Disconnect()
+		freeCamConnection = nil
+	end
+
+	local dummy = workspace:FindFirstChild("FreeCamDummy")
+	if dummy then
+		dummy:Destroy()
+	end
+
+	camera.CameraType = Enum.CameraType.Custom
+	camera.CameraSubject = humanoid
+
+	setStatus("free cam off")
+	playFunctionSound()
 end
 
 local function healPlayer()
@@ -1277,6 +1671,27 @@ local function createESP(plr)
 		return
 	end
 
+	if state.espOptions.teamOnly then
+		local localTeam = player.Team
+		local targetTeam = plr.Team
+
+		if not localTeam or not targetTeam or localTeam ~= targetTeam then
+			removeESP(plr)
+			return
+		end
+	end
+
+	local distance = (player.Character and player.Character:FindFirstChild("HumanoidRootPart"))
+		and (plr.Character and plr.Character:FindFirstChild("HumanoidRootPart"))
+		and (player.Character:FindFirstChild("HumanoidRootPart").Position
+			- plr.Character:FindFirstChild("HumanoidRootPart").Position).Magnitude
+		or 0
+
+	if distance > state.espOptions.distance then
+		removeESP(plr)
+		return
+	end
+
 	removeESP(plr)
 
 	local char = plr.Character
@@ -1291,7 +1706,7 @@ local function createESP(plr)
 
 	if state.espOptions.highlight then
 		highlight = Instance.new("Highlight")
-		highlight.Name = "V23_ESP_Highlight"
+		highlight.Name = "V24_ESP_Highlight"
 		highlight.Adornee = char
 		highlight.FillColor = Color3.fromRGB(255, 75, 75)
 		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
@@ -1305,7 +1720,7 @@ local function createESP(plr)
 
 	if state.espOptions.name or state.espOptions.hp then
 		billboard = Instance.new("BillboardGui")
-		billboard.Name = "V23_ESP_Billboard"
+		billboard.Name = "V24_ESP_Billboard"
 		billboard.Adornee = hrp
 		billboard.AlwaysOnTop = true
 		billboard.Size = UDim2.new(0, 190, 0, 32)
@@ -1534,6 +1949,18 @@ ragdollButton.Activated:Connect(function()
 	playFunctionSound()
 end)
 
+freeCamButton.Activated:Connect(function()
+	if freeCamActive then
+		stopFreeCam()
+		freeCamButton.Text = "Free Cam: OFF"
+	else
+		startFreeCam()
+		freeCamButton.Text = "Free Cam: ON"
+	end
+
+	playFunctionSound()
+end)
+
 minimizeButton.Activated:Connect(function()
 	main.Visible = false
 	openButton.Visible = true
@@ -1543,17 +1970,20 @@ end)
 
 closeButton.Activated:Connect(function()
 	stopFly()
+	stopFreeCam()
 	unlock()
 	clearESPAll()
 	gui:Destroy()
 end)
 
-openButton.Activated:Connect(function()
+local function openMenu()
 	main.Visible = true
 	openButton.Visible = false
 	setStatus("menu opened")
 	playFunctionSound()
-end)
+end
+
+openButton.Activated:Connect(openMenu)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then
@@ -1566,6 +1996,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		setStatus(waitingBind .. " bound to " .. input.KeyCode.Name)
 		waitingBind = nil
 		playFunctionSound()
+		saveSettings()
 		return
 	end
 
@@ -1614,6 +2045,14 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			elseif command == "TPClick" then
 				state.tpMode = not state.tpMode
 				tpButton.Text = "Click TP: " .. (state.tpMode and "ON" or "OFF")
+			elseif command == "FreeCam" then
+				if freeCamActive then
+					stopFreeCam()
+					freeCamButton.Text = "Free Cam: OFF"
+				else
+					startFreeCam()
+					freeCamButton.Text = "Free Cam: ON"
+				end
 			end
 
 			playFunctionSound()
@@ -1670,53 +2109,52 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 RunService.RenderStepped:Connect(function()
-	if not state.lockTarget then
-		return
-	end
+	if state.lockTarget then
+		if not state.lockTarget.Character then
+			unlock()
+			return
+		end
 
-	if not state.lockTarget.Character then
-		unlock()
-		return
-	end
+		local targetPart = getTargetPart(state.lockTarget)
+		local targetHumanoid = state.lockTarget.Character:FindFirstChildOfClass("Humanoid")
 
-	local targetPart = getTargetPart(state.lockTarget)
-	local targetHumanoid = state.lockTarget.Character:FindFirstChildOfClass("Humanoid")
+		if not targetPart or not targetHumanoid or targetHumanoid.Health <= 0 then
+			unlock()
+			return
+		end
 
-	if not targetPart or not targetHumanoid or targetHumanoid.Health <= 0 then
-		unlock()
-		return
-	end
+		if not root then
+			return
+		end
 
-	if not root then
-		return
-	end
+		local targetPosition = targetPart.Position
+		local desiredPosition =
+			root.Position
+			- root.CFrame.LookVector * 10
+			+ Vector3.new(0, 2.5, 0)
 
-	local targetPosition = targetPart.Position
-	local desiredPosition =
-		root.Position
-		- root.CFrame.LookVector * 10
-		+ Vector3.new(0, 2.5, 0)
+		local desiredCamera = CFrame.new(
+			desiredPosition,
+			targetPosition
+		)
 
-	local desiredCamera = CFrame.new(
-		desiredPosition,
-		targetPosition
-	)
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = camera.CFrame:Lerp(desiredCamera, 0.14)
 
-	camera.CameraType = Enum.CameraType.Scriptable
-	camera.CFrame = camera.CFrame:Lerp(desiredCamera, 0.14)
+		root.CFrame = CFrame.new(
+			root.Position,
+			Vector3.new(targetPosition.X, root.Position.Y, targetPosition.Z)
+		)
 
-	root.CFrame = CFrame.new(
-		root.Position,
-		Vector3.new(targetPosition.X, root.Position.Y, targetPosition.Z)
-	)
-
-	if lockBillboard and lockBillboard.Adornee ~= targetPart then
-		lockBillboard.Adornee = targetPart
+		if lockBillboard and lockBillboard.Adornee ~= targetPart then
+			lockBillboard.Adornee = targetPart
+		end
 	end
 end)
 
 player.CharacterAdded:Connect(function(char)
 	stopFly()
+	stopFreeCam()
 	clearLockVisual()
 	setCharacter(char)
 
@@ -1729,5 +2167,7 @@ player.CharacterAdded:Connect(function(char)
 	end
 end)
 
+loadSettings()
+applyTheme(state.theme)
 refreshPlayers()
 setStatus("ready")
