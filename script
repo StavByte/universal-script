@@ -60,6 +60,17 @@ local espConnections = {}
 
 local eventLog = {}
 
+local overlayGui
+local fpsOverlay
+local pingOverlay
+local hpOverlay
+
+local overlayState = {
+	fps = false,
+	ping = false,
+	hp = false,
+}
+
 local function addLogEntry(text)
 	table.insert(eventLog, 1, os.clock() .. " | " .. text)
 
@@ -167,6 +178,9 @@ local function loadSettings()
 					state.toggles[k] = v
 				end
 			end
+			if data.overlayState then
+				overlayState = data.overlayState
+			end
 		end
 	end
 end
@@ -181,6 +195,7 @@ local function saveSettings()
 		keybinds = {},
 		theme = state.theme,
 		toggles = state.toggles,
+		overlayState = overlayState,
 	}
 
 	for k, v in pairs(state.keybinds) do
@@ -445,6 +460,14 @@ gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.DisplayOrder = 999
 gui.Parent = playerGui
+
+overlayGui = Instance.new("ScreenGui")
+overlayGui.Name = "OverlayV30"
+overlayGui.ResetOnSpawn = false
+overlayGui.IgnoreGuiInset = true
+overlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+overlayGui.DisplayOrder = 1000
+overlayGui.Parent = playerGui
 
 main = Instance.new("Frame")
 main.Name = "MainWindow"
@@ -805,13 +828,23 @@ macroButton = makeButton(
 
 makeLabel(
 	tabFrames.Main,
-	"Fly: W/A/S/D + Space + LeftControl\nClick TP: включи режим и нажми по поверхности.\nLock On: включи и используй среднюю кнопку мыши.\nMacro: fly + esp + lock одной клавишей.",
+	"Fly: W/A/S/D + Space + LeftControl\nClick TP: enable mode and click on surface.\nLock On: enable and use middle mouse button.\nMacro: fly + esp + lock with one key.",
 	UDim2.new(0, 0, 0, 385),
 	UDim2.new(1, 0, 0, 65)
 )
 
+local settingsScroll = Instance.new("ScrollingFrame")
+settingsScroll.Size = UDim2.new(1, -10, 1, -10)
+settingsScroll.Position = UDim2.new(0, 5, 0, 5)
+settingsScroll.BackgroundTransparency = 1
+settingsScroll.BorderSizePixel = 0
+settingsScroll.ScrollBarThickness = 5
+settingsScroll.CanvasSize = UDim2.new(0, 0, 0, 850)
+settingsScroll.ZIndex = 4
+settingsScroll.Parent = tabFrames.Settings
+
 local flySpeedLabel = makeLabel(
-	tabFrames.Settings,
+	settingsScroll,
 	"Fly Speed: 120",
 	UDim2.new(0, 0, 0, 8),
 	UDim2.new(1, 0, 0, 18)
@@ -824,7 +857,7 @@ flySlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
 flySlider.BorderSizePixel = 0
 flySlider.Active = true
 flySlider.ZIndex = 5
-flySlider.Parent = tabFrames.Settings
+flySlider.Parent = settingsScroll
 
 roundify(flySlider, 8)
 addStroke(flySlider, Color3.fromRGB(70, 85, 110), 1, 0.4)
@@ -878,7 +911,7 @@ flySlider.InputChanged:Connect(function(input)
 end)
 
 flyNoclipToggle = makeButton(
-	tabFrames.Settings,
+	settingsScroll,
 	"Fly Noclip: OFF",
 	Color3.fromRGB(62, 68, 82),
 	UDim2.new(0, 0, 0, 70),
@@ -906,7 +939,7 @@ flyNoclipToggle.Activated:Connect(function()
 end)
 
 local walkSpeedLabel = makeLabel(
-	tabFrames.Settings,
+	settingsScroll,
 	"WalkSpeed: 16",
 	UDim2.new(0, 0, 0, 115),
 	UDim2.new(1, 0, 0, 18)
@@ -919,7 +952,7 @@ walkSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
 walkSlider.BorderSizePixel = 0
 walkSlider.Active = true
 walkSlider.ZIndex = 5
-walkSlider.Parent = tabFrames.Settings
+walkSlider.Parent = settingsScroll
 
 roundify(walkSlider, 8)
 addStroke(walkSlider, Color3.fromRGB(70, 85, 110), 1, 0.4)
@@ -978,7 +1011,7 @@ walkSlider.InputChanged:Connect(function(input)
 end)
 
 local jumpPowerLabel = makeLabel(
-	tabFrames.Settings,
+	settingsScroll,
 	"JumpPower: 50",
 	UDim2.new(0, 0, 0, 175),
 	UDim2.new(1, 0, 0, 18)
@@ -991,7 +1024,7 @@ jumpPowerSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
 jumpPowerSlider.BorderSizePixel = 0
 jumpPowerSlider.Active = true
 jumpPowerSlider.ZIndex = 5
-jumpPowerSlider.Parent = tabFrames.Settings
+jumpPowerSlider.Parent = settingsScroll
 
 roundify(jumpPowerSlider, 8)
 addStroke(jumpPowerSlider, Color3.fromRGB(70, 85, 110), 1, 0.4)
@@ -1050,14 +1083,14 @@ jumpPowerSlider.InputChanged:Connect(function(input)
 end)
 
 local lockLabel = makeLabel(
-	tabFrames.Settings,
+	settingsScroll,
 	"Lock Target: Body",
 	UDim2.new(0, 0, 0, 235),
 	UDim2.new(1, 0, 0, 18)
 )
 
 local lockDropdown = makeButton(
-	tabFrames.Settings,
+	settingsScroll,
 	"Lock Target: Body",
 	Color3.fromRGB(28, 32, 45),
 	UDim2.new(0, 0, 0, 261),
@@ -1071,7 +1104,7 @@ lockOptions.BackgroundTransparency = 1
 lockOptions.Visible = false
 lockOptions.ClipsDescendants = true
 lockOptions.ZIndex = 8
-lockOptions.Parent = tabFrames.Settings
+lockOptions.Parent = settingsScroll
 
 local lockLayout = Instance.new("UIListLayout")
 lockLayout.Padding = UDim.new(0, 5)
@@ -1109,7 +1142,7 @@ lockDropdown.Activated:Connect(function()
 end)
 
 local espTitle = makeLabel(
-	tabFrames.Settings,
+	settingsScroll,
 	"ESP options",
 	UDim2.new(0, 0, 0, 355),
 	UDim2.new(1, 0, 0, 18)
@@ -1117,7 +1150,7 @@ local espTitle = makeLabel(
 
 local function createOptionToggle(text, key, y)
 	local button = makeButton(
-		tabFrames.Settings,
+		settingsScroll,
 		text .. ": ON",
 		Color3.fromRGB(48, 115, 80),
 		UDim2.new(0, 0, 0, y),
@@ -1149,7 +1182,7 @@ createOptionToggle("Name", "name", 453)
 createOptionToggle("Color By Team", "colorByTeam", 489)
 
 local distanceLabel = makeLabel(
-	tabFrames.Settings,
+	settingsScroll,
 	"ESP Distance: 200",
 	UDim2.new(0, 0, 0, 525),
 	UDim2.new(1, 0, 0, 18)
@@ -1162,7 +1195,7 @@ distanceSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
 distanceSlider.BorderSizePixel = 0
 distanceSlider.Active = true
 distanceSlider.ZIndex = 5
-distanceSlider.Parent = tabFrames.Settings
+distanceSlider.Parent = settingsScroll
 
 roundify(distanceSlider, 8)
 addStroke(distanceSlider, Color3.fromRGB(70, 85, 110), 1, 0.4)
@@ -1232,7 +1265,7 @@ distanceSlider.InputChanged:Connect(function(input)
 end)
 
 local hpThresholdLabel = makeLabel(
-	tabFrames.Settings,
+	settingsScroll,
 	"ESP HP Threshold: 50",
 	UDim2.new(0, 0, 0, 587),
 	UDim2.new(1, 0, 0, 18)
@@ -1245,7 +1278,7 @@ hpThresholdSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
 hpThresholdSlider.BorderSizePixel = 0
 hpThresholdSlider.Active = true
 hpThresholdSlider.ZIndex = 5
-hpThresholdSlider.Parent = tabFrames.Settings
+hpThresholdSlider.Parent = settingsScroll
 
 roundify(hpThresholdSlider, 8)
 addStroke(hpThresholdSlider, Color3.fromRGB(70, 85, 110), 1, 0.4)
@@ -1303,7 +1336,7 @@ hpThresholdSlider.InputChanged:Connect(function(input)
 end)
 
 local maxDistanceLabel = makeLabel(
-	tabFrames.Settings,
+	settingsScroll,
 	"ESP Max Distance: 300",
 	UDim2.new(0, 0, 0, 649),
 	UDim2.new(1, 0, 0, 18)
@@ -1316,7 +1349,7 @@ maxDistanceSlider.BackgroundColor3 = Color3.fromRGB(28, 32, 45)
 maxDistanceSlider.BorderSizePixel = 0
 maxDistanceSlider.Active = true
 maxDistanceSlider.ZIndex = 5
-maxDistanceSlider.Parent = tabFrames.Settings
+maxDistanceSlider.Parent = settingsScroll
 
 roundify(maxDistanceSlider, 8)
 addStroke(maxDistanceSlider, Color3.fromRGB(70, 85, 110), 1, 0.4)
@@ -1374,7 +1407,7 @@ maxDistanceSlider.InputChanged:Connect(function(input)
 end)
 
 local teamOnlyToggle = makeButton(
-	tabFrames.Settings,
+	settingsScroll,
 	"ESP Team Only: OFF",
 	Color3.fromRGB(62, 68, 82),
 	UDim2.new(0, 0, 0, 711),
@@ -1396,22 +1429,91 @@ teamOnlyToggle.Activated:Connect(function()
 	playFunctionSound()
 end)
 
+local overlayFpsToggle = makeButton(
+	settingsScroll,
+	"Overlay FPS: OFF",
+	Color3.fromRGB(62, 68, 82),
+	UDim2.new(0, 0, 0, 749),
+	UDim2.new(1, 0, 0, 30)
+)
+
+overlayFpsToggle.Activated:Connect(function()
+	overlayState.fps = not overlayState.fps
+	overlayFpsToggle.Text = "Overlay FPS: " .. (overlayState.fps and "ON" or "OFF")
+	overlayFpsToggle.BackgroundColor3 = overlayState.fps
+		and Color3.fromRGB(48, 115, 80)
+		or Color3.fromRGB(62, 68, 82)
+
+	if fpsOverlay then
+		fpsOverlay.Visible = overlayState.fps
+	end
+
+	saveSettings()
+	playFunctionSound()
+end)
+
+local overlayPingToggle = makeButton(
+	settingsScroll,
+	"Overlay Ping: OFF",
+	Color3.fromRGB(62, 68, 82),
+	UDim2.new(0, 0, 0, 787),
+	UDim2.new(1, 0, 0, 30)
+)
+
+overlayPingToggle.Activated:Connect(function()
+	overlayState.ping = not overlayState.ping
+	overlayPingToggle.Text = "Overlay Ping: " .. (overlayState.ping and "ON" or "OFF")
+	overlayPingToggle.BackgroundColor3 = overlayState.ping
+		and Color3.fromRGB(48, 115, 80)
+		or Color3.fromRGB(62, 68, 82)
+
+	if pingOverlay then
+		pingOverlay.Visible = overlayState.ping
+	end
+
+	saveSettings()
+	playFunctionSound()
+end)
+
+local overlayHpToggle = makeButton(
+	settingsScroll,
+	"Overlay HP: OFF",
+	Color3.fromRGB(62, 68, 82),
+	UDim2.new(0, 0, 0, 825),
+	UDim2.new(1, 0, 0, 30)
+)
+
+overlayHpToggle.Activated:Connect(function()
+	overlayState.hp = not overlayState.hp
+	overlayHpToggle.Text = "Overlay HP: " .. (overlayState.hp and "ON" or "OFF")
+	overlayHpToggle.BackgroundColor3 = overlayState.hp
+		and Color3.fromRGB(48, 115, 80)
+		or Color3.fromRGB(62, 68, 82)
+
+	if hpOverlay then
+		hpOverlay.Visible = overlayState.hp
+	end
+
+	saveSettings()
+	playFunctionSound()
+end)
+
 local themeDropdown = makeButton(
-	tabFrames.Settings,
+	settingsScroll,
 	"Theme: Dark",
 	Color3.fromRGB(28, 32, 45),
-	UDim2.new(0, 0, 0, 749),
+	UDim2.new(0, 0, 0, 863),
 	UDim2.new(1, 0, 0, 32)
 )
 
 local themeOptions = Instance.new("Frame")
 themeOptions.Size = UDim2.new(1, 0, 0, 0)
-themeOptions.Position = UDim2.new(0, 0, 0, 789)
+themeOptions.Position = UDim2.new(0, 0, 0, 903)
 themeOptions.BackgroundTransparency = 1
 themeOptions.Visible = false
 themeOptions.ClipsDescendants = true
 themeOptions.ZIndex = 8
-themeOptions.Parent = tabFrames.Settings
+themeOptions.Parent = settingsScroll
 
 local themeLayout = Instance.new("UIListLayout")
 themeLayout.Padding = UDim.new(0, 5)
@@ -1468,24 +1570,45 @@ local coordsLabel = makeLabel(
 	UDim2.new(1, 0, 0, 24)
 )
 
+local posXLabel = makeLabel(
+	tabFrames.Info,
+	"Position X: 0.00",
+	UDim2.new(0, 0, 0, 90),
+	UDim2.new(1, 0, 0, 24)
+)
+
+local posYLabel = makeLabel(
+	tabFrames.Info,
+	"Position Y: 0.00",
+	UDim2.new(0, 0, 0, 120),
+	UDim2.new(1, 0, 0, 24)
+)
+
+local posZLabel = makeLabel(
+	tabFrames.Info,
+	"Position Z: 0.00",
+	UDim2.new(0, 0, 0, 150),
+	UDim2.new(1, 0, 0, 24)
+)
+
 local healthLabel = makeLabel(
 	tabFrames.Info,
 	"Health: 100/100",
-	UDim2.new(0, 0, 0, 90),
+	UDim2.new(0, 0, 0, 180),
 	UDim2.new(1, 0, 0, 24)
 )
 
 local walkSpeedInfoLabel = makeLabel(
 	tabFrames.Info,
 	"WalkSpeed: 16",
-	UDim2.new(0, 0, 0, 120),
+	UDim2.new(0, 0, 0, 210),
 	UDim2.new(1, 0, 0, 24)
 )
 
 local jumpPowerInfoLabel = makeLabel(
 	tabFrames.Info,
 	"JumpPower: 50",
-	UDim2.new(0, 0, 0, 150),
+	UDim2.new(0, 0, 0, 240),
 	UDim2.new(1, 0, 0, 24)
 )
 
@@ -1499,6 +1622,9 @@ local function updateInfo()
 
 	fpsLabel.Text = "FPS: " .. fps
 	pingLabel.Text = "Ping: " .. math.floor(ping) .. "ms"
+	posXLabel.Text = "Position X: " .. string.format("%.2f", root.Position.X)
+	posYLabel.Text = "Position Y: " .. string.format("%.2f", root.Position.Y)
+	posZLabel.Text = "Position Z: " .. string.format("%.2f", root.Position.Z)
 	coordsLabel.Text = "Position: " .. string.format("%.2f, %.2f, %.2f", root.Position.X, root.Position.Y, root.Position.Z)
 	healthLabel.Text = "Health: " .. math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
 	walkSpeedInfoLabel.Text = "WalkSpeed: " .. humanoid.WalkSpeed
@@ -1514,9 +1640,127 @@ local function updateInfo()
 		local speedPercent = math.clamp(humanoid.WalkSpeed / 50, 0, 1)
 		speedFill.Size = UDim2.new(speedPercent, 0, 1, 0)
 	end
+
+	if fpsOverlay then
+		fpsOverlay.TextLabel.Text = "FPS: " .. fps
+	end
+
+	if pingOverlay then
+		pingOverlay.TextLabel.Text = "Ping: " .. math.floor(ping) .. "ms"
+	end
+
+	if hpOverlay then
+		local hpPercent = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+		hpOverlay.Frame.Fill.Size = UDim2.new(hpPercent, 0, 1, 0)
+		hpOverlay.TextLabel.Text = "HP: " .. math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
+	end
 end
 
 RunService.RenderStepped:Connect(updateInfo)
+
+fpsOverlay = Instance.new("Frame")
+fpsOverlay.Name = "FPSOverlay"
+fpsOverlay.Size = UDim2.new(0, 120, 0, 32)
+fpsOverlay.Position = UDim2.new(0, 16, 0, 16)
+fpsOverlay.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
+fpsOverlay.BackgroundTransparency = 0.3
+fpsOverlay.BorderSizePixel = 0
+fpsOverlay.ZIndex = 1
+fpsOverlay.Parent = overlayGui
+
+roundify(fpsOverlay, 8)
+addStroke(fpsOverlay, Color3.fromRGB(70, 85, 110), 1, 0.3)
+
+local fpsLabelOverlay = Instance.new("TextLabel")
+fpsLabelOverlay.Name = "TextLabel"
+fpsLabelOverlay.Size = UDim2.new(1, 0, 1, 0)
+fpsLabelOverlay.BackgroundTransparency = 1
+fpsLabelOverlay.Text = "FPS: 60"
+fpsLabelOverlay.TextColor3 = Color3.fromRGB(245, 247, 255)
+fpsLabelOverlay.Font = Enum.Font.GothamBold
+fpsLabelOverlay.TextSize = 14
+fpsLabelOverlay.ZIndex = 2
+fpsLabelOverlay.Parent = fpsOverlay
+
+makeDraggable(fpsOverlay, fpsOverlay)
+
+pingOverlay = Instance.new("Frame")
+pingOverlay.Name = "PingOverlay"
+pingOverlay.Size = UDim2.new(0, 120, 0, 32)
+pingOverlay.Position = UDim2.new(0, 16, 0, 56)
+pingOverlay.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
+pingOverlay.BackgroundTransparency = 0.3
+pingOverlay.BorderSizePixel = 0
+pingOverlay.ZIndex = 1
+pingOverlay.Parent = overlayGui
+
+roundify(pingOverlay, 8)
+addStroke(pingOverlay, Color3.fromRGB(70, 85, 110), 1, 0.3)
+
+local pingLabelOverlay = Instance.new("TextLabel")
+pingLabelOverlay.Name = "TextLabel"
+pingLabelOverlay.Size = UDim2.new(1, 0, 1, 0)
+pingLabelOverlay.BackgroundTransparency = 1
+pingLabelOverlay.Text = "Ping: 45ms"
+pingLabelOverlay.TextColor3 = Color3.fromRGB(245, 247, 255)
+pingLabelOverlay.Font = Enum.Font.GothamBold
+pingLabelOverlay.TextSize = 14
+pingLabelOverlay.ZIndex = 2
+pingLabelOverlay.Parent = pingOverlay
+
+makeDraggable(pingOverlay, pingOverlay)
+
+hpOverlay = Instance.new("Frame")
+hpOverlay.Name = "HPOverlay"
+hpOverlay.Size = UDim2.new(0, 180, 0, 48)
+hpOverlay.Position = UDim2.new(0, 16, 0, 96)
+hpOverlay.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
+hpOverlay.BackgroundTransparency = 0.3
+hpOverlay.BorderSizePixel = 0
+hpOverlay.ZIndex = 1
+hpOverlay.Parent = overlayGui
+
+roundify(hpOverlay, 8)
+addStroke(hpOverlay, Color3.fromRGB(70, 85, 110), 1, 0.3)
+
+local hpOverlayFrame = Instance.new("Frame")
+hpOverlayFrame.Name = "Frame"
+hpOverlayFrame.Size = UDim2.new(1, -10, 0, 6)
+hpOverlayFrame.Position = UDim2.new(0, 5, 0, 10)
+hpOverlayFrame.BackgroundColor3 = Color3.fromRGB(35, 39, 52)
+hpOverlayFrame.BorderSizePixel = 0
+hpOverlayFrame.ZIndex = 2
+hpOverlayFrame.Parent = hpOverlay
+
+roundify(hpOverlayFrame, 3)
+
+local hpOverlayFill = Instance.new("Frame")
+hpOverlayFill.Name = "Fill"
+hpOverlayFill.Size = UDim2.new(1, 0, 1, 0)
+hpOverlayFill.BackgroundColor3 = Color3.fromRGB(75, 180, 120)
+hpOverlayFill.BorderSizePixel = 0
+hpOverlayFill.ZIndex = 3
+hpOverlayFill.Parent = hpOverlayFrame
+
+roundify(hpOverlayFill, 3)
+
+local hpOverlayLabel = Instance.new("TextLabel")
+hpOverlayLabel.Name = "TextLabel"
+hpOverlayLabel.Size = UDim2.new(1, 0, 0, 18)
+hpOverlayLabel.Position = UDim2.new(0, 0, 0, 24)
+hpOverlayLabel.BackgroundTransparency = 1
+hpOverlayLabel.Text = "HP: 100/100"
+hpOverlayLabel.TextColor3 = Color3.fromRGB(245, 247, 255)
+hpOverlayLabel.Font = Enum.Font.GothamBold
+hpOverlayLabel.TextSize = 12
+hpOverlayLabel.ZIndex = 4
+hpOverlayLabel.Parent = hpOverlay
+
+makeDraggable(hpOverlay, hpOverlay)
+
+fpsOverlay.Visible = overlayState.fps
+pingOverlay.Visible = overlayState.ping
+hpOverlay.Visible = overlayState.hp
 
 local playerSearch = Instance.new("TextBox")
 playerSearch.Size = UDim2.new(1, 0, 0, 34)
@@ -1698,7 +1942,7 @@ end
 
 makeLabel(
 	tabFrames.Commands,
-	"Нажми на кнопку None, затем нажми нужную клавишу.",
+	"Click None button, then press desired key.",
 	UDim2.new(0, 0, 0, 0),
 	UDim2.new(1, 0, 0, 28)
 )
