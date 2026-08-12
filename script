@@ -1,8 +1,6 @@
 --[[
 	Debug Menu v3.0
 	Public release for GitHub
-	Style: LowHUB inspired
-	Features: Fly, ESP, Lock, TP, Macros, Info, Commands, Draggable Overlays
 ]]
 
 local Players = game:GetService("Players")
