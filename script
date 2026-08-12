@@ -1,6 +1,8 @@
 --[[
 	Debug Menu v3.0
 	Public release for GitHub
+	Style: LowHUB inspired
+	Features: Fly, ESP, Lock, TP, Macros, Info, Commands, Draggable Overlays
 ]]
 
 local Players = game:GetService("Players")
@@ -1429,34 +1431,11 @@ teamOnlyToggle.Activated:Connect(function()
 	playFunctionSound()
 end)
 
-local overlayFpsToggle = makeButton(
-	settingsScroll,
-	"Overlay FPS: OFF",
-	Color3.fromRGB(62, 68, 82),
-	UDim2.new(0, 0, 0, 749),
-	UDim2.new(1, 0, 0, 30)
-)
-
-overlayFpsToggle.Activated:Connect(function()
-	overlayState.fps = not overlayState.fps
-	overlayFpsToggle.Text = "Overlay FPS: " .. (overlayState.fps and "ON" or "OFF")
-	overlayFpsToggle.BackgroundColor3 = overlayState.fps
-		and Color3.fromRGB(48, 115, 80)
-		or Color3.fromRGB(62, 68, 82)
-
-	if fpsOverlay then
-		fpsOverlay.Visible = overlayState.fps
-	end
-
-	saveSettings()
-	playFunctionSound()
-end)
-
 local overlayPingToggle = makeButton(
 	settingsScroll,
 	"Overlay Ping: OFF",
 	Color3.fromRGB(62, 68, 82),
-	UDim2.new(0, 0, 0, 787),
+	UDim2.new(0, 0, 0, 749),
 	UDim2.new(1, 0, 0, 30)
 )
 
@@ -1469,6 +1448,29 @@ overlayPingToggle.Activated:Connect(function()
 
 	if pingOverlay then
 		pingOverlay.Visible = overlayState.ping
+	end
+
+	saveSettings()
+	playFunctionSound()
+end)
+
+local overlayFpsToggle = makeButton(
+	settingsScroll,
+	"Overlay FPS: OFF",
+	Color3.fromRGB(62, 68, 82),
+	UDim2.new(0, 0, 0, 787),
+	UDim2.new(1, 0, 0, 30)
+)
+
+overlayFpsToggle.Activated:Connect(function()
+	overlayState.fps = not overlayState.fps
+	overlayFpsToggle.Text = "Overlay FPS: " .. (overlayState.fps and "ON" or "OFF")
+	overlayFpsToggle.BackgroundColor3 = overlayState.fps
+		and Color3.fromRGB(48, 115, 80)
+		or Color3.fromRGB(62, 68, 82)
+
+	if fpsOverlay then
+		fpsOverlay.Visible = overlayState.fps
 	end
 
 	saveSettings()
@@ -1612,16 +1614,34 @@ local jumpPowerInfoLabel = makeLabel(
 	UDim2.new(1, 0, 0, 24)
 )
 
+local fpsCounter = 0
+local frameAccumulator = 0
+local lastFpsUpdate = 0
+
 local function updateInfo()
 	if not humanoid or not root then
 		return
 	end
 
-	local fps = math.floor(1 / RunService.RenderStepped:Wait())
-	local ping = StatsService and StatsService:GetStatistics().Ping or 0
+	local dt = RunService.RenderStepped:Wait()
+	frameAccumulator = frameAccumulator + dt
+	fpsCounter = fpsCounter + 1
 
-	fpsLabel.Text = "FPS: " .. fps
+	if frameAccumulator >= 0.5 then
+		local currentFps = math.floor(fpsCounter / frameAccumulator)
+		fpsCounter = 0
+		frameAccumulator = 0
+
+		fpsLabel.Text = "FPS: " .. currentFps
+
+		if fpsOverlay then
+			fpsOverlay.TextLabel.Text = "FPS: " .. currentFps
+		end
+	end
+
+	local ping = StatsService and StatsService:GetStatistics().Ping or 0
 	pingLabel.Text = "Ping: " .. math.floor(ping) .. "ms"
+
 	posXLabel.Text = "Position X: " .. string.format("%.2f", root.Position.X)
 	posYLabel.Text = "Position Y: " .. string.format("%.2f", root.Position.Y)
 	posZLabel.Text = "Position Z: " .. string.format("%.2f", root.Position.Z)
@@ -1641,10 +1661,6 @@ local function updateInfo()
 		speedFill.Size = UDim2.new(speedPercent, 0, 1, 0)
 	end
 
-	if fpsOverlay then
-		fpsOverlay.TextLabel.Text = "FPS: " .. fps
-	end
-
 	if pingOverlay then
 		pingOverlay.TextLabel.Text = "Ping: " .. math.floor(ping) .. "ms"
 	end
@@ -1658,36 +1674,10 @@ end
 
 RunService.RenderStepped:Connect(updateInfo)
 
-fpsOverlay = Instance.new("Frame")
-fpsOverlay.Name = "FPSOverlay"
-fpsOverlay.Size = UDim2.new(0, 120, 0, 32)
-fpsOverlay.Position = UDim2.new(0, 16, 0, 16)
-fpsOverlay.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
-fpsOverlay.BackgroundTransparency = 0.3
-fpsOverlay.BorderSizePixel = 0
-fpsOverlay.ZIndex = 1
-fpsOverlay.Parent = overlayGui
-
-roundify(fpsOverlay, 8)
-addStroke(fpsOverlay, Color3.fromRGB(70, 85, 110), 1, 0.3)
-
-local fpsLabelOverlay = Instance.new("TextLabel")
-fpsLabelOverlay.Name = "TextLabel"
-fpsLabelOverlay.Size = UDim2.new(1, 0, 1, 0)
-fpsLabelOverlay.BackgroundTransparency = 1
-fpsLabelOverlay.Text = "FPS: 60"
-fpsLabelOverlay.TextColor3 = Color3.fromRGB(245, 247, 255)
-fpsLabelOverlay.Font = Enum.Font.GothamBold
-fpsLabelOverlay.TextSize = 14
-fpsLabelOverlay.ZIndex = 2
-fpsLabelOverlay.Parent = fpsOverlay
-
-makeDraggable(fpsOverlay, fpsOverlay)
-
 pingOverlay = Instance.new("Frame")
 pingOverlay.Name = "PingOverlay"
 pingOverlay.Size = UDim2.new(0, 120, 0, 32)
-pingOverlay.Position = UDim2.new(0, 16, 0, 56)
+pingOverlay.Position = UDim2.new(0, 16, 0, 16)
 pingOverlay.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
 pingOverlay.BackgroundTransparency = 0.3
 pingOverlay.BorderSizePixel = 0
@@ -1709,6 +1699,32 @@ pingLabelOverlay.ZIndex = 2
 pingLabelOverlay.Parent = pingOverlay
 
 makeDraggable(pingOverlay, pingOverlay)
+
+fpsOverlay = Instance.new("Frame")
+fpsOverlay.Name = "FPSOverlay"
+fpsOverlay.Size = UDim2.new(0, 120, 0, 32)
+fpsOverlay.Position = UDim2.new(0, 16, 0, 56)
+fpsOverlay.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
+fpsOverlay.BackgroundTransparency = 0.3
+fpsOverlay.BorderSizePixel = 0
+fpsOverlay.ZIndex = 1
+fpsOverlay.Parent = overlayGui
+
+roundify(fpsOverlay, 8)
+addStroke(fpsOverlay, Color3.fromRGB(70, 85, 110), 1, 0.3)
+
+local fpsLabelOverlay = Instance.new("TextLabel")
+fpsLabelOverlay.Name = "TextLabel"
+fpsLabelOverlay.Size = UDim2.new(1, 0, 1, 0)
+fpsLabelOverlay.BackgroundTransparency = 1
+fpsLabelOverlay.Text = "FPS: 60"
+fpsLabelOverlay.TextColor3 = Color3.fromRGB(245, 247, 255)
+fpsLabelOverlay.Font = Enum.Font.GothamBold
+fpsLabelOverlay.TextSize = 14
+fpsLabelOverlay.ZIndex = 2
+fpsLabelOverlay.Parent = fpsOverlay
+
+makeDraggable(fpsOverlay, fpsOverlay)
 
 hpOverlay = Instance.new("Frame")
 hpOverlay.Name = "HPOverlay"
